@@ -1,0 +1,12 @@
+HH Goa T3 — Face-ID Blockchain Pipeline
+.env           ← your real secrets (git-ignored)
+.env.example   ← template for secrets
+.gitignore
+README.md
+requirements.txt
+src/
+  __init__.py
+  face_id.py          ← Stage 1: face detect + encode
+  reverse_search.py   ← Stage 2: Google Vision Web Detection
+  blockchain_record.py← Stage 3: write + verify on testnet
+  pipeline.py         ← Stage 4: full end-to-end CLI

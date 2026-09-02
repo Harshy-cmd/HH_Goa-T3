@@ -1,0 +1,14 @@
+# ── Face detection & encoding ──────────────────────────────────────────────────
+face_recognition          # wraps dlib; installs dlib as a dep
+numpy                     # ndarray for face encodings
+
+# ── Google Cloud Vision (Web Detection) ───────────────────────────────────────
+google-cloud-vision       # Vision API client library
+
+# ── Blockchain ────────────────────────────────────────────────────────────────
+web3>=6.0.0               # Ethereum-compatible web3 client
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dotenv             # load .env at runtime
+requests                  # optional: direct HTTP calls if needed
+Pillow                    # image helpers
