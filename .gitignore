@@ -1,31 +1,41 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
-*.egg
+# --- secrets -----------------------------------------------------------------
+.env
+.env.*
+!.env.example
 
-# Virtual environments
+# --- python ------------------------------------------------------------------
 .venv/
 venv/
-env/
-ENV/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
 
-# Secrets — NEVER commit these
-.env
+# --- generated artifacts -----------------------------------------------------
+# Run outputs are reproducible; they are not source. Kept out of git so the
+# repo can never be mistaken for shipping a pre-baked "successful" result.
+artifacts/*
+!artifacts/.gitkeep
 
-# Google service-account keys
-*.json
-!package.json
+# --- downloaded model weights (~39 MB, fetched on first run) -----------------
+models/*
+!models/.gitkeep
 
-# OS
-.DS_Store
-Thumbs.db
+# --- sample input images -----------------------------------------------------
+# Face images are biometric data and are not committed. scripts/fetch_sample.py
+# downloads a CC-licensed portrait on demand; see samples/ATTRIBUTION.md.
+samples/*
+!samples/.gitkeep
+!samples/ATTRIBUTION.md
 
-# IDE
+# --- solc / foundry caches ---------------------------------------------------
+.solcx/
+build/
+tools/
+
+# --- editor / os -------------------------------------------------------------
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db

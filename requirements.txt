@@ -1,14 +1,14 @@
-# ── Face detection & encoding ──────────────────────────────────────────────────
-face_recognition          # wraps dlib; installs dlib as a dep
-numpy                     # ndarray for face encodings
+# Face detection (YuNet) + face embedding (SFace) both ship inside the
+# opencv-python wheel as cv2.FaceDetectorYN / cv2.FaceRecognizerSF.
+# Pinned to 4.x: OpenCV 5 has not been validated against this code.
+opencv-python==4.12.0.88
+numpy>=1.26,<3
+Pillow>=10.0                # only used to re-encode the <=500 KB search copy
 
-# ── Google Cloud Vision (Web Detection) ───────────────────────────────────────
-google-cloud-vision       # Vision API client library
+requests>=2.31              # search providers + candidate image download
 
-# ── Blockchain ────────────────────────────────────────────────────────────────
-web3>=6.0.0               # Ethereum-compatible web3 client
+web3==7.16.0                # Ethereum JSON-RPC + contract calls
+py-solc-x==2.0.5            # downloads solc and compiles the registry contract
+python-dotenv>=1.0          # .env loading
 
-# ── Utilities ─────────────────────────────────────────────────────────────────
-python-dotenv             # load .env at runtime
-requests                  # optional: direct HTTP calls if needed
-Pillow                    # image helpers
+pytest>=8.0                 # unit tests (no network required)
