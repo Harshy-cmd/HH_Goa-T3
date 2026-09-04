@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python -m pip --version)",
+      "Bash(git --version)",
+      "Bash(anvil --version)",
+      "Bash(cmake --version)",
+      "Bash(gh --version)",
+      "Bash(python -c \"import venv; print\\('venv ok'\\)\")",
+      "WebFetch(domain:serpapi.com)",
+      "Bash(python -m pip index versions dlib)",
+      "Bash(python -m pip index versions opencv-python)",
+      "Bash(python -m pip index versions face_recognition)",
+      "Bash(python -m pip index versions web3)",
+      "Bash(python -c \"import cv2; print\\(cv2.__version__\\)\")",
+      "WebFetch(domain:docs.cloud.google.com)",
+      "Bash(python -m venv .venv)",
+      "Bash(./.venv/Scripts/python.exe --version)",
+      "Bash(./.venv/Scripts/python.exe -m pip install --upgrade pip -q)",
+      "Bash(./.venv/Scripts/python.exe -m pip --version)",
+      "Bash(./.venv/Scripts/python.exe -m pip download dlib --no-deps --only-binary=:all: -d /tmp/dlibtest)",
+      "Bash(./.venv/Scripts/python.exe -m pip install -q \"opencv-python==4.12.0.88\" \"numpy>=1.26,<3\" \"Pillow>=10\" \"requests>=2.31\")",
+      "Bash(./.venv/Scripts/python.exe -c ' *)",
+      "Bash(./.venv/Scripts/python.exe -m pip install -q \"web3==7.16.0\" \"eth-tester[py-evm]==0.12.0b2\" \"py-solc-x==2.0.3\" \"python-dotenv>=1.0\" \"pytest>=8\")",
+      "Bash(echo \"=== EXIT $? ===\")",
+      "Bash(./.venv/Scripts/python.exe -m pip install -q \"web3==7.16.0\" \"py-solc-x==2.0.3\" \"python-dotenv>=1.0\" \"pytest>=8\")",
+      "Bash(./.venv/Scripts/python.exe -m pip index versions py-solc-x)",
+      "Bash(./.venv/Scripts/python.exe -m pip install -q -U \"py-solc-x==2.0.5\")",
+      "Bash(mkdir -p app/face app/search app/chain app/net contracts scripts tests samples artifacts docs)",
+      "Bash(git init *)",
+      "Bash(printf '\"\"\"Face ID + Blockchain Verification pipeline.\"\"\"\\\\n\\\\n__version__ = \"1.0.0\"\\\\n')",
+      "Bash(printf '\"\"\"Face detection, encoding and matching.\"\"\"\\\\n')",
+      "Bash(printf '\"\"\"Reverse image search providers.\"\"\"\\\\n')",
+      "Bash(printf '\"\"\"Blockchain compilation, deployment and registry access.\"\"\"\\\\n')",
+      "Bash(printf '\"\"\"Network helpers.\"\"\"\\\\n')",
+      "Bash(./.venv/Scripts/python.exe -m pip install -q \"eth-tester[py-evm]\")",
+      "Bash(mkdir -p tools)",
+      "Bash(./tools/anvil.exe --version)",
+      "Bash(./tools/anvil.exe --port 8545 --silent)"
+    ]
+  }
+}
