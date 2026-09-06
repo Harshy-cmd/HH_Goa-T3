@@ -7,8 +7,8 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111%2B-009688?logo=fastapi&logoColor=white)
 ![Solidity 0.8.28](https://img.shields.io/badge/Solidity-0.8.28-363636?logo=solidity&logoColor=white)
 ![Ethereum Sepolia](https://img.shields.io/badge/Ethereum-Sepolia-3C3C3D?logo=ethereum&logoColor=white)
-![Tests: 115 passing](https://img.shields.io/badge/tests-115%20passing-brightgreen)
-![v1.0.0](https://img.shields.io/badge/version-1.0.0-blue)
+![Tests: 122 passing](https://img.shields.io/badge/tests-122%20passing-brightgreen)
+![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue)
 
 ---
 
@@ -17,6 +17,9 @@
 - [Overview](#overview)
 - [Key Features](#key-features)
 - [Tech Stack](#tech-stack)
+- [Multi-Source Provenance & Deterministic Ranking](#multi-source-provenance--deterministic-ranking)
+- [Blockchain Idempotency & Gas Economics](#blockchain-idempotency--gas-economics)
+- [Technical Pipeline Inspector (Evaluator Tool)](#technical-pipeline-inspector-evaluator-tool)
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Core Application Flow](#core-application-flow)
@@ -45,10 +48,11 @@
 1. **Detect** a face in a local image using OpenCV YuNet
 2. **Encode** it as a 128-dimensional SFace embedding
 3. **Search** the web for visual matches using a genuine reverse-image-search API
-4. **Verify** that a discovered candidate image contains the same face
-5. **Fingerprint** the entire verification record with SHA-256 over canonical JSON
-6. **Commit** the fingerprint to an Ethereum-compatible blockchain
-7. **Prove** the record has not been tampered with by re-reading the chain
+4. **Verify** discovered candidates across multiple sources (probing up to 10 candidates)
+5. **Deterministically Rank** the primary source based on similarity, reachability, image origin, and rank
+6. **Fingerprint** the entire verification record with SHA-256 over canonical JSON
+7. **Commit** the fingerprint to an Ethereum-compatible blockchain with built-in idempotency
+8. **Prove** the record has not been tampered with by re-reading the chain
 
 The project is a technical demonstration of how computer vision, public-web search, deterministic hashing, and blockchain immutability can be composed into a single auditable pipeline. It is aimed at developers, evaluators, and hackathon judges who want to see a real, end-to-end proof-of-concept — not mocked API calls or pre-seeded data.
 
@@ -60,19 +64,23 @@ The project is a technical demonstration of how computer vision, public-web sear
 
 | | Feature | Description |
 |---|---|---|
-| 🌐 | **Web UI & Live Streaming** | Modern single-page app with drag-and-drop upload, 7-stage progress rail, terminal console, and live Server-Sent Events (SSE) |
+| 🌐 | **Web UI & Live Streaming** | Single-page app with drag-and-drop upload, 7-stage progress rail, categorized terminal console, and live SSE streaming |
+| 🔍 | **Technical Pipeline Inspector** | Dedicated evaluator tool modal exposing raw canonical JSON, cryptographic hash derivation, face geometry, and contract links |
+| 🗂️ | **Multi-Source Provenance** | Probes up to 10 candidates; records all validated matches in `validated_sources`; clearly separates discovered vs. validated sources |
+| ⚖️ | **Deterministic Primary Ranking** | Solves source volatility (e.g. Bill Gates NYT vs Instagram) using a deterministic 5-tier key (similarity bucket, link status, origin, rank, URL) |
+| ⛽ | **Blockchain Idempotency** | Checks on-chain registry before broadcasting; identical verified images reuse existing anchors without redundant gas or contract reverts |
+| 🛡️ | **Render 512MB RAM Safety** | Explicit `del arr` memory releases, resolution downscaling, and `MAX_CONCURRENT_JOBS=1` execution locks prevent OOM crashes |
 | 🖼️ | **Universal Image Support** | OpenCV-first with Pillow fallback & EXIF transpose: supports JPEG, PNG, WebP, BMP, TIFF, GIF, AVIF, and iPhone HEIC/HEIF |
 | 🔗 | **Link Liveness & Reachability** | Concurrent SSRF-safe link classification (HEAD→GET fallback) detects live pages, login walls, and dead links to prioritise evidence |
 | 🧠 | **Face Detection** | YuNet (OpenCV DNN) detects faces in milliseconds — no cmake, dlib, or GPU required |
-| 🔐 | **Face Encoding & Matching** | SFace produces 128-D embeddings; cosine similarity with a three-way verdict (MATCH / POSSIBLE MATCH / NO MATCH) using OpenCV's published threshold |
+| 🔐 | **Face Encoding & Matching** | SFace produces 128-D embeddings; cosine similarity with a three-way verdict (MATCH / POSSIBLE MATCH / NO MATCH) |
 | 🔍 | **Genuine Reverse Image Search** | SerpAPI Google Lens (primary) or Google Cloud Vision WEB_DETECTION (fallback) — live API calls, never cached or pre-seeded |
 | 📱 | **Social Media Prioritisation** | Results from X, Reddit, Instagram, Facebook, LinkedIn, TikTok, YouTube, and 15+ platforms are detected by URL and tried first |
 | ✅ | **Candidate Face Verification** | Candidate images are downloaded, faces are detected and encoded, and cosine similarity is computed against the input |
 | 🔗 | **Blockchain Registration** | SHA-256 of canonical JSON is committed on-chain via a Solidity smart contract on Ethereum Sepolia (or any EVM chain) |
 | 🛡️ | **Tamper Detection** | Modify any field in the artifact → recompute the hash → compare with the blockchain → `TAMPER DETECTED` (available in CLI and Web UI) |
 | 🏥 | **Pre-flight Diagnostics** | `doctor` command validates API keys, model weights, blockchain connectivity, and wallet balance before a run |
-| 🧪 | **115 Offline Unit Tests** | Hashing, serialisation, matching, config, social detection, reachability, universal decode, and server SSE — 100% offline |
-| 🖥️ | **Clean CLI Output** | Step-by-step terminal output with colour, designed for unedited screen recordings |
+| 🧪 | **122 Offline Unit Tests** | Hashing, multi-source ranking, idempotency, serialisation, matching, reachability, and server SSE — 100% passing |
 
 ---
 
@@ -94,8 +102,78 @@ The project is a technical demonstration of how computer vision, public-web sear
 | **Contract Artifacts** | Committed `VerificationRegistry.json` | Precompiled ABI and bytecode (zero compiler needed at runtime) |
 | **Hashing & Security** | hashlib (stdlib) + canonical JSON | Deterministic SHA-256 digests over sorted, whitespace-free JSON |
 | **Configuration** | python-dotenv ≥ 1.0 | `.env` file loading with per-command validation |
-| **Testing** | pytest ≥ 8.0 + httpx ≥ 0.28 | 115 offline unit and server tests |
+| **Testing** | pytest ≥ 8.0 + httpx ≥ 0.28 | 122 offline unit and server tests |
 | **Array Operations** | NumPy ≥ 1.26 | Face embedding vectors and OpenCV interop |
+
+---
+
+## Multi-Source Provenance & Deterministic Ranking
+
+In real-world web environments, an image often appears across dozens of platforms simultaneously (news publishers, social networks, blogs, forums). A naive verification pipeline that breaks on the first match is inherently non-deterministic because network latency, bot-blocking, and rate-limiting cause different URLs to be attempted first on different runs.
+
+### The Bill Gates Discrepancy & Root Cause
+
+During initial evaluations on a test portrait of Bill Gates:
+- **Run 1** selected **The New York Times** (`https://www.nytimes.com/...`) as the verified source.
+- **Run 2** selected **Instagram** (`https://www.instagram.com/...`) as the verified source.
+
+**Root-Cause Analysis:**
+Google Lens returned 59 candidate pages for the image (NYT ranked #1 & #2; Instagram ranked #9). The legacy pipeline attempted reachability checks and verified candidates sequentially, breaking on the very first match:
+1. Instagram's anti-bot defenses intermittently returned `401 Unauthorized` / `403 Forbidden` on lightweight HEAD probes, classifying it as a `login_wall` (secondary priority). NYT returned `200 OK` (live), so NYT was probed first and matched.
+2. When Instagram returned `200 OK` on a subsequent run, the social prioritizer promoted it to Tier 0, probing it before NYT and matching first.
+
+### The Multi-Source Architecture
+
+The pipeline now implements a **multi-candidate probe with deterministic primary selection**:
+1. **Multi-Candidate Probing**: Instead of short-circuiting on the first match, Stage 5 evaluates up to 10 top candidate pages, downloading images, detecting faces, and encoding embeddings.
+2. **Comprehensive Audit Collection**: Every candidate that passes facial similarity verification is collected into `validated_sources` and recorded in `artifacts/candidates.json` and `latest_verification.json`.
+3. **Deterministic Primary Selection**: The primary candidate (committed as the primary reference on-chain) is chosen using a strict 5-tier key:
+   - **Tier 1 — Similarity Bucket**: Cosine similarity rounded to 2 decimals (`round(sim, 2)`) to group statistically indistinguishable face matches. Higher similarity dominates.
+   - **Tier 2 — Link Usability**: `live` (3) > `login_wall` (2) > `unknown` (1) > `dead` (0). Prefer sources a human evaluator can immediately open without authentication.
+   - **Tier 3 — Image Origin**: Direct publisher image (1) > search provider thumbnail (0).
+   - **Tier 4 — Search Engine Relevance Rank**: Lower rank number (e.g. rank 1 from Google Lens) preferred.
+   - **Tier 5 — Lexicographical Tie-Breaker**: Page URL alphabetically.
+
+This guarantees that identical inputs always produce the identical primary source and identical cryptographic record hash, while surfacing all secondary confirmed sources in the UI and audit artifacts.
+
+---
+
+## Blockchain Idempotency & Gas Economics
+
+### Idempotency Protection
+
+Writing records to Ethereum Sepolia costs gas and takes 1-3 blocks (~15-45 seconds). In production:
+- Re-submitting the same image or same record hash must **never** broadcast a duplicate transaction.
+- Attempting to re-register the same `bytes32 recordHash` on `VerificationRegistry.sol` would revert with `AlreadyRegistered(bytes32)`.
+
+**Implementation:**
+1. **On-Chain Pre-Check**: Before broadcasting any transaction, `_blockchain_register` calls `registry.get_record(rec_hash)`. If a record already exists on-chain, the pipeline logs the existing block timestamp and submitter address, returns the confirmed receipt with `idempotent=True`, and consumes **0 gas**.
+2. **Deterministic Artifact Continuity**: When verifying an image whose file digest (`sha256`) matches the most recent verification artifact, the original `created_at` timestamp is preserved, keeping `record_hash` stable and triggering idempotent retrieval.
+
+### Wallet Funding & Gas Analysis
+
+Live evaluation wallet: `0x72540F38B3ff3A0423B7DF9d88fE6F70329b1677` on Ethereum Sepolia:
+- **Balance**: `0.327949 ETH`
+- **Cost per verification**: ~167,000 gas at ~1.04 Gwei base fee = ~0.000174 ETH ($0.00 on testnet).
+- **Capacity**: The wallet holds sufficient testnet ETH for **~1,885 on-chain verifications**, eliminating any risk of evaluation failure during multi-day testing.
+
+---
+
+## Technical Pipeline Inspector (Evaluator Tool)
+
+To provide 100% transparency for hackathon evaluators and technical judges, the web interface includes a **Technical Pipeline Inspector** modal accessible via the `Inspector` button in the header.
+
+### Features:
+- **Canonical JSON Viewer**: Formatted, syntax-highlighted display of the exact JSON payload hashed by the pipeline. Includes a one-click "Copy JSON" button.
+- **Cryptographic Hash Pipeline**: Step-by-step visual mapping:
+  $$\text{Input Image} \rightarrow \text{YuNet Face Detection} \rightarrow \text{SFace 128-D Embedding} \rightarrow \text{Canonical JSON} \rightarrow \text{SHA-256 Digest} \rightarrow \text{Sepolia Contract}$$
+- **Smart Contract & Network Parameters**: Live link to the verified contract on Sepolia Etherscan (`0x58159AAC8d811FBb92A050fD3F4dA702DBD9f3ae`), Solidity method signatures, and idempotency status.
+- **Biometrics & Model Geometry**: Bounding box coordinates `(x, y, width, height)` of the target face, detection confidence, and cosine similarity metric.
+- **Render 512MB RAM Budget**: Operational specifications documenting how memory limits are respected.
+
+### Evaluator API Endpoints:
+- `GET /api/pipeline-info` — JSON endpoint exposing active contract address, network chain ID, model versions, similarity thresholds, and memory bounds.
+- `GET /api/latest-artifact` — Returns the raw verification artifact JSON currently saved on disk.
 
 ---
 

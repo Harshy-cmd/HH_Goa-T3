@@ -179,6 +179,28 @@ class CandidateVerification:
     def verified(self) -> bool:
         return self.best.is_match
 
+    def to_summary_dict(self, include_audit: bool = False) -> dict[str, Any]:
+        """Summary representation for multi-source provenance records."""
+        data = {
+            "rank": self.result.rank,
+            "page_url": self.result.page_url,
+            "title": self.result.title,
+            "source": self.result.source,
+            "platform": self.result.platform,
+            "image_url": self.image_url_used,
+            "image_origin": self.image_origin,
+            "image_sha256": self.image_sha256,
+            "image_bytes": self.image_bytes_len,
+            "faces_detected": self.faces_detected,
+            "similarity": quantize(self.best.similarity),
+            "l2_distance": quantize(self.best.l2_distance),
+            "verdict": self.best.verdict,
+            "verified": self.verified,
+        }
+        if include_audit:
+            data["page_link_status"] = self.page_link_status
+        return data
+
 
 @dataclass
 class InputImage:
@@ -204,19 +226,20 @@ class InputImage:
 class VerificationRecord:
     """The canonical record that gets hashed and committed on-chain.
 
-    Contains public URLs, a similarity score, and content digests. It contains
-    no image bytes, no embeddings, and no personal information.
+    Contains public URLs, similarity scores, content digests, and multi-source
+    provenance. It contains no image bytes, no embeddings, and no personal information.
     """
 
     input_image: InputImage
     search: SearchResponse
-    candidate: CandidateVerification
+    candidate: CandidateVerification  # Primary / best validated match
     detector_model: str
     encoder_model: str
     metric: str
     threshold: float
     review_threshold: float
     created_at: str
+    validated_sources: list[CandidateVerification] = field(default_factory=list)
 
     def to_record(self) -> dict[str, Any]:
         """Build the exact dict that gets canonicalised and hashed.
@@ -225,6 +248,14 @@ class VerificationRecord:
         the shape ever has to change.
         """
         c = self.candidate
+        sources = self.validated_sources if self.validated_sources else [c]
+        # Sort validated sources deterministically: similarity DESC, rank ASC, page_url ASC
+        sorted_sources = sorted(
+            sources,
+            key=lambda s: (-quantize(s.best.similarity), s.result.rank, s.result.page_url or ""),
+        )
+        sources_records = [s.to_summary_dict() for s in sorted_sources]
+
         return {
             "schema_version": SCHEMA_VERSION,
             "created_at": self.created_at,
@@ -263,6 +294,7 @@ class VerificationRecord:
                 "l2_distance": quantize(c.best.l2_distance),
                 "verdict": c.best.verdict,
             },
+            "validated_sources": sources_records,
             "verified": c.verified,
         }
 

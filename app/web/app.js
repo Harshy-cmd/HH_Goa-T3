@@ -75,6 +75,25 @@ const el = {
   vOnChain: $('vOnChain'),
   verifyExplain: $('verifyExplain'),
 
+  // Multi-source provenance
+  sourcesBlock: $('sourcesBlock'),
+  sourcesList: $('sourcesList'),
+  discoveredCount: $('discoveredCount'),
+  validatedCount: $('validatedCount'),
+
+  // Technical Pipeline Inspector
+  openInspectorBtn: $('openInspectorBtn'),
+  inspectorModal: $('inspectorModal'),
+  closeInspectorBtn: $('closeInspectorBtn'),
+  closeInspectorBtn2: $('closeInspectorBtn2'),
+  refreshInspectorBtn: $('refreshInspectorBtn'),
+  copyRecordBtn: $('copyRecordBtn'),
+  inspectorRecordCode: $('inspectorRecordCode'),
+  inspNetwork: $('inspNetwork'),
+  inspContractLink: $('inspContractLink'),
+  inspThreshold: $('inspThreshold'),
+  inspFaceBox: $('inspFaceBox'),
+
   errorCard: $('errorCard'),
   errorKind: $('errorKind'),
   errorMessage: $('errorMessage'),
@@ -232,17 +251,19 @@ async function streamJob(jobId) {
 // ===========================================================================
 
 function handleEvent(ev) {
+  const time = ev.time || null;
+  const cat = ev.category || 'SYSTEM';
   switch (ev.type) {
     case 'hello': break;
     case 'step':
       setStage(ev.index, 'active');
-      logLine('step', `[${ev.index}/${ev.total}]`, ev.title, 'step-line');
+      logLine('step', `[${ev.index}/${ev.total}]`, ev.title, 'step-line', time, cat);
       break;
-    case 'log': logLine(ev.level, tagFor(ev.level), ev.message); break;
-    case 'kv': logKv(ev.key, ev.value); break;
-    case 'section': logLine('info', '::', ev.title); break;
+    case 'log': logLine(ev.level, tagFor(ev.level), ev.message, '', time, cat); break;
+    case 'kv': logKv(ev.key, ev.value, time, cat); break;
+    case 'section': logLine('info', '::', ev.title, '', time, cat); break;
     case 'banner': break;
-    case 'verdict': logLine(ev.passed ? 'ok' : 'fail', ev.passed ? 'PASS' : 'FAIL', `${ev.label}`); break;
+    case 'verdict': logLine(ev.passed ? 'ok' : 'fail', ev.passed ? 'PASS' : 'FAIL', `${ev.label}`, '', time, cat); break;
     case 'milestone': handleMilestone(ev.kind, ev.payload || {}); break;
     case 'result': onResult(ev.result || {}); break;
     case 'error':
@@ -258,13 +279,31 @@ function handleMilestone(kind, p) {
     case 'faces_detected':
       facesPayload = p;
       drawBoxes();
+      if (el.inspFaceBox && p.faces && p.faces.length > 0) {
+        const tf = p.faces[p.target_index || 0];
+        el.inspFaceBox.textContent = `x=${tf.x}, y=${tf.y}, w=${tf.width}, h=${tf.height} (confidence ${((tf.confidence || 0) * 100).toFixed(1)}%)`;
+      }
+      break;
+    case 'search_results':
+      if (el.discoveredCount) el.discoveredCount.textContent = p.result_count || 0;
+      break;
+    case 'source_validated':
+      // Real-time incremental match notification
+      logLine('ok', 'MATCH', `Verified candidate #${p.rank} (${p.source || 'web'}) similarity ${p.similarity}`, '', null, 'SOURCE');
       break;
     case 'candidate_matched':
       populateMatch(p);
+      if (el.validatedCount) el.validatedCount.textContent = p.validated_sources_count || 1;
+      if (p.validated_sources && p.validated_sources.length > 0) {
+        renderValidatedSources(p.validated_sources, p.page_url);
+      }
       show(el.resultCard);
       break;
     case 'record_hashed':
       if (p.record_hash) el.recordHash.textContent = p.record_hash;
+      if (el.inspectorRecordCode && p.record) {
+        el.inspectorRecordCode.textContent = JSON.stringify(p.record, null, 2);
+      }
       break;
     case 'chain_confirmed':
       populateChain(p);
@@ -282,8 +321,13 @@ function onResult(result) {
   setLive(false);
   if (result.record_hash) el.recordHash.textContent = result.record_hash;
   if (typeof result.integrity_match === 'boolean') setIntegrity(result.integrity_match);
+  if (result.validated_sources && result.validated_sources.length > 0) {
+    renderValidatedSources(result.validated_sources, (result.artifact && result.artifact.record && result.artifact.record.candidate) ? result.artifact.record.candidate.page_url : null);
+  }
   show(el.resultCard);
   show(el.verifyCard);
+  // Pre-load latest artifact into inspector
+  loadInspectorData();
 }
 
 // ===========================================================================
@@ -496,18 +540,38 @@ function tagFor(level) {
   return { ok: 'OK', info: '..', warn: 'WARN', fail: 'FAIL' }[level] || '..';
 }
 
-function logLine(level, tag, msg, extraClass = '') {
+function logLine(level, tag, msg, extraClass = '', time = null, category = 'SYSTEM') {
   const line = document.createElement('div');
   line.className = `log-line ${extraClass}`;
-  line.innerHTML = `<span class="log-tag ${level}">${escapeHtml(tag)}</span><span class="log-msg">${escapeHtml(msg)}</span>`;
+  line.dataset.category = category;
+  if (currentFilter !== 'ALL' && category !== currentFilter) {
+    line.classList.add('hidden');
+  }
+  const timeStr = time || new Date().toTimeString().slice(0, 8);
+  line.innerHTML = `
+    <span class="log-time">${escapeHtml(timeStr)}</span>
+    <span class="log-cat ${escapeHtml(category)}">${escapeHtml(category)}</span>
+    <span class="log-tag ${escapeHtml(level)}">${escapeHtml(tag)}</span>
+    <span class="log-msg">${escapeHtml(msg)}</span>
+  `;
   el.console.appendChild(line);
   el.console.scrollTop = el.console.scrollHeight;
 }
 
-function logKv(key, value) {
+function logKv(key, value, time = null, category = 'SYSTEM') {
   const line = document.createElement('div');
   line.className = 'log-line';
-  line.innerHTML = `<span class="log-tag kv"></span><span class="log-msg"><span class="log-kv-key">${escapeHtml(key)}:</span> ${escapeHtml(String(value))}</span>`;
+  line.dataset.category = category;
+  if (currentFilter !== 'ALL' && category !== currentFilter) {
+    line.classList.add('hidden');
+  }
+  const timeStr = time || new Date().toTimeString().slice(0, 8);
+  line.innerHTML = `
+    <span class="log-time">${escapeHtml(timeStr)}</span>
+    <span class="log-cat ${escapeHtml(category)}">${escapeHtml(category)}</span>
+    <span class="log-tag kv">..</span>
+    <span class="log-msg"><span class="log-kv-key">${escapeHtml(key)}:</span> ${escapeHtml(String(value))}</span>
+  `;
   el.console.appendChild(line);
   el.console.scrollTop = el.console.scrollHeight;
 }
@@ -585,5 +649,171 @@ function toast(msg) {
   }, 2200);
 }
 
+// ===========================================================================
+// Multi-Source Provenance & Inspector
+// ===========================================================================
+
+function renderValidatedSources(sources, primaryUrl) {
+  if (!el.sourcesBlock || !el.sourcesList) return;
+  el.sourcesList.innerHTML = '';
+  if (!sources || sources.length === 0) {
+    hide(el.sourcesBlock);
+    return;
+  }
+  show(el.sourcesBlock);
+  if (el.validatedCount) el.validatedCount.textContent = sources.length;
+
+  sources.forEach((s) => {
+    const isPrimary = (primaryUrl && s.page_url === primaryUrl) || s.rank === 1;
+    const card = document.createElement('div');
+    card.className = `source-card${isPrimary ? ' primary' : ''}`;
+
+    const sim = Number(s.similarity) || 0;
+    const simPercent = (sim * 100).toFixed(1);
+    const status = s.page_link_status || 'unknown';
+    const statusClass = status === 'live' ? 'live' : (status === 'login_wall' ? 'login' : 'dead');
+    const statusLabel = status === 'live' ? 'live' : (status === 'login_wall' ? 'requires login' : (status === 'dead' ? 'dead link' : 'unverified'));
+
+    card.innerHTML = `
+      <div class="source-rank">#${s.rank}</div>
+      <div class="source-info">
+        <div class="source-title-row">
+          <span class="source-name">${escapeHtml(s.source || hostOf(s.page_url))}</span>
+          ${s.platform ? `<span class="source-platform-tag">${escapeHtml(s.platform)}</span>` : ''}
+          ${isPrimary ? '<span class="primary-tag">Primary</span>' : ''}
+          <span class="link-status ${statusClass}">${escapeHtml(statusLabel)}</span>
+        </div>
+        <div class="source-url-preview" title="${escapeHtml(s.page_url || '')}">${escapeHtml(s.page_url || 'Direct image link')}</div>
+      </div>
+      <div class="source-metrics">
+        <div class="source-sim-badge">${sim.toFixed(3)} sim (${simPercent}%)</div>
+        <div class="source-action-links">
+          ${s.image_url ? `<a href="${escapeHtml(s.image_url)}" target="_blank" rel="noopener noreferrer" class="ext-link">Image ↗</a>` : ''}
+          ${s.page_url ? `<a href="${escapeHtml(s.page_url)}" target="_blank" rel="noopener noreferrer" class="ext-link">Page ↗</a>` : ''}
+        </div>
+      </div>
+    `;
+    el.sourcesList.appendChild(card);
+  });
+}
+
+// --- Console filtering ------------------------------------------------------
+let currentFilter = 'ALL';
+function setupConsoleFilters() {
+  const container = $('consoleFilters');
+  if (!container) return;
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('.filter-btn');
+    if (!btn) return;
+    container.querySelectorAll('.filter-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter || 'ALL';
+    applyConsoleFilter();
+  });
+}
+
+function applyConsoleFilter() {
+  const lines = el.console.querySelectorAll('.log-line');
+  lines.forEach((line) => {
+    if (currentFilter === 'ALL') {
+      line.classList.remove('hidden');
+    } else {
+      const cat = line.dataset.category || 'SYSTEM';
+      if (cat === currentFilter) {
+        line.classList.remove('hidden');
+      } else {
+        line.classList.add('hidden');
+      }
+    }
+  });
+}
+
+// --- Technical Pipeline Inspector -------------------------------------------
+async function loadInspectorData() {
+  try {
+    const infoResp = await fetch('/api/pipeline-info');
+    if (infoResp.ok) {
+      const info = await infoResp.json();
+      if (el.inspNetwork) el.inspNetwork.textContent = `${info.network} (Chain ID: ${info.chain_id})`;
+      if (el.inspContractLink && info.contract_address) {
+        el.inspContractLink.textContent = `${info.contract_address} ↗`;
+        el.inspContractLink.href = info.contract_explorer || `https://sepolia.etherscan.io/address/${info.contract_address}`;
+      }
+      if (el.inspThreshold) {
+        el.inspThreshold.textContent = `${info.match_threshold} (cosine match), ${info.review_threshold} (review threshold)`;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not load pipeline-info', e);
+  }
+
+  try {
+    const artResp = await fetch('/api/latest-artifact');
+    if (artResp.ok) {
+      const art = await artResp.json();
+      if (el.inspectorRecordCode) {
+        el.inspectorRecordCode.textContent = JSON.stringify(art.record || art, null, 2);
+      }
+    }
+  } catch (e) {
+    console.warn('Could not load latest-artifact', e);
+  }
+}
+
+function setupInspector() {
+  if (!el.openInspectorBtn || !el.inspectorModal) return;
+
+  el.openInspectorBtn.addEventListener('click', () => {
+    show(el.inspectorModal);
+    loadInspectorData();
+  });
+
+  const close = () => hide(el.inspectorModal);
+  if (el.closeInspectorBtn) el.closeInspectorBtn.addEventListener('click', close);
+  if (el.closeInspectorBtn2) el.closeInspectorBtn2.addEventListener('click', close);
+
+  el.inspectorModal.addEventListener('click', (e) => {
+    if (e.target === el.inspectorModal) close();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !el.inspectorModal.hidden) close();
+  });
+
+  // Tabs
+  const tabBtns = el.inspectorModal.querySelectorAll('.tab-btn');
+  tabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      tabBtns.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      const targetId = btn.dataset.tab;
+      el.inspectorModal.querySelectorAll('.tab-content').forEach((sec) => {
+        sec.classList.remove('active');
+      });
+      const targetSec = $(targetId);
+      if (targetSec) targetSec.classList.add('active');
+    });
+  });
+
+  // Refresh
+  if (el.refreshInspectorBtn) {
+    el.refreshInspectorBtn.addEventListener('click', () => {
+      loadInspectorData();
+      toast('Inspector reloaded');
+    });
+  }
+
+  // Copy canonical JSON
+  if (el.copyRecordBtn) {
+    el.copyRecordBtn.addEventListener('click', () => {
+      const code = el.inspectorRecordCode.textContent;
+      navigator.clipboard?.writeText(code).then(() => toast('Canonical JSON copied')).catch(() => toast('Copy failed'));
+    });
+  }
+}
+
 // init
 renderStages();
+setupConsoleFilters();
+setupInspector();
+loadInspectorData();

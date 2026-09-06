@@ -166,14 +166,43 @@ def _search(
     return response
 
 
+def _rank_primary_candidate(candidates: list[CandidateVerification]) -> CandidateVerification:
+    """Deterministically select the primary candidate from multiple validated sources.
+
+    Ranking criteria (in order of priority):
+    1. Facial similarity score bucket (rounded to 2 decimal places to group comparable scores)
+    2. Usable page link status (live > login_wall/redirect > slow > dead/failed)
+    3. Image origin (publisher image preferred over provider thumbnail)
+    4. Search engine rank (lower rank number = higher relevance)
+    5. Deterministic tie-breaker: page URL alphabetically
+    """
+    def sort_key(cv: CandidateVerification):
+        sim_bucket = round(cv.best.similarity, 2)
+        status_weight = {
+            LinkStatus.LIVE.value: 3,
+            LinkStatus.LOGIN_WALL.value: 2,
+            LinkStatus.UNKNOWN.value: 1,
+            LinkStatus.DEAD.value: 0,
+        }.get(cv.page_link_status or "", 1)
+        origin_weight = 1 if cv.image_origin == "publisher" else 0
+        rank = cv.result.rank if cv.result.rank is not None else 999
+        url = cv.result.page_url or ""
+        # Ascending sort: negate weights where higher is better
+        return (-sim_bucket, -status_weight, -origin_weight, rank, url)
+
+    return sorted(candidates, key=sort_key)[0]
+
+
 def _verify_candidates(
     response: SearchResponse,
     input_encoding,
     config: Config,
     detector: FaceDetector,
     encoder: FaceEncoder,
-) -> CandidateVerification:
-    """Stage 5: download candidate images and face-verify them."""
+    max_probe: int = 10,
+    max_matches: int = 5,
+) -> tuple[CandidateVerification, list[CandidateVerification]]:
+    """Stage 5: download candidate images and face-verify them across multiple sources."""
     ui.step(5, TOTAL_STEPS, "Verifying discovered candidates")
 
     from .search.social import prioritise
@@ -190,10 +219,12 @@ def _verify_candidates(
     response.link_statuses = {url: status.value for url, status in link_map.items()}
 
     ordered = prioritise(response.results, link_map)
-    verified: CandidateVerification | None = None
+    validated_sources: list[CandidateVerification] = []
     attempts: list[dict] = []
 
-    for result in ordered:
+    # Evaluate up to max_probe candidates to discover multiple validated sources
+    candidates_to_probe = ordered[:max_probe]
+    for result in candidates_to_probe:
         # Try image_url first (full publisher image), then thumbnail
         urls_to_try = []
         if result.image_url:
@@ -206,6 +237,7 @@ def _verify_candidates(
             attempts.append({"rank": result.rank, "url": result.page_url, "status": "no_image_url"})
             continue
 
+        matched_for_this_result = False
         for origin, url in urls_to_try:
             try:
                 ui.info(f"  #{result.rank}: fetching {_truncate(url, 70)}")
@@ -230,9 +262,13 @@ def _verify_candidates(
             if not cand_faces:
                 ui.info(f"  #{result.rank}: no faces in candidate image")
                 attempts.append({"rank": result.rank, "url": url, "status": "no_faces"})
+                del arr
                 continue
 
             cand_encodings = encoder.encode_all(arr, cand_faces)
+            # Free candidate image buffer immediately to keep memory safely within Render 512MB
+            del arr
+
             if not cand_encodings:
                 ui.info(f"  #{result.rank}: faces detected but none could be encoded")
                 attempts.append({"rank": result.rank, "url": url, "status": "encode_failed"})
@@ -272,13 +308,27 @@ def _verify_candidates(
             })
 
             if best.is_match:
-                verified = cv
-                break  # found a match, stop trying URLs for this result
+                validated_sources.append(cv)
+                ui.event(
+                    "source_validated",
+                    {
+                        "rank": result.rank,
+                        "page_url": result.page_url,
+                        "platform": result.platform,
+                        "source": result.source,
+                        "similarity": round(best.similarity, 4),
+                        "page_link_status": page_status.value if page_status else None,
+                        "image_origin": origin,
+                    },
+                )
+                matched_for_this_result = True
+                break  # found a match for this search result, stop trying URLs for this result
 
-        if verified:
-            break  # found a match, stop trying more results
+        if matched_for_this_result and len(validated_sources) >= max_matches:
+            ui.info(f"Found {len(validated_sources)} verified sources, stopping candidate probe early.")
+            break
 
-    if not verified:
+    if not validated_sources:
         raise NoVerifiableCandidateError(
             f"Checked {len(attempts)} candidate(s), but none contained a matching face "
             f"(threshold {config.match_threshold}).",
@@ -288,41 +338,43 @@ def _verify_candidates(
             ),
         )
 
-    ui.ok("Verified candidate found!")
-    tag = f" [{verified.result.platform}]" if verified.result.platform else ""
-    page_label = _link_label(verified.page_link_status)
-    ui.kv("Source", f"{verified.result.source or 'web'}{tag}")
-    # The image URL is the reliable evidence: it renders the exact matched face
-    # and effectively always resolves, unlike the source page which may 404 or
-    # sit behind a login wall. Surface it first; show the page link, labelled.
-    ui.kv("Evidence image", _truncate(verified.image_url_used, 78))
-    ui.kv("Source page", f"{_truncate(verified.result.page_url, 60)} [{page_label}]")
-    ui.kv("Image SHA-256", verified.image_sha256[:16] + "...")
-    ui.kv("Faces detected", verified.faces_detected)
-    ui.kv("Best similarity", f"{verified.best.similarity:.4f}")
-    ui.kv("Threshold", f"{verified.best.threshold}")
-    ui.kv("Verdict", verified.best.verdict)
+    # Deterministically select the primary source from all validated candidates
+    primary = _rank_primary_candidate(validated_sources)
+
+    ui.ok(f"{len(validated_sources)} verified candidate source(s) found! Primary: #{primary.result.rank}")
+    tag = f" [{primary.result.platform}]" if primary.result.platform else ""
+    page_label = _link_label(primary.page_link_status)
+    ui.kv("Primary Source", f"{primary.result.source or 'web'}{tag}")
+    ui.kv("Evidence image", _truncate(primary.image_url_used, 78))
+    ui.kv("Source page", f"{_truncate(primary.result.page_url, 60)} [{page_label}]")
+    ui.kv("Image SHA-256", primary.image_sha256[:16] + "...")
+    ui.kv("Faces detected", primary.faces_detected)
+    ui.kv("Best similarity", f"{primary.best.similarity:.4f}")
+    ui.kv("Threshold", f"{primary.best.threshold}")
+    ui.kv("Verdict", primary.best.verdict)
 
     ui.event(
         "candidate_matched",
         {
-            "page_url": verified.result.page_url,
-            "image_url_used": verified.image_url_used,
-            "image_origin": verified.image_origin,
-            "source": verified.result.source,
-            "platform": verified.result.platform,
-            "title": verified.result.title,
-            "similarity": round(verified.best.similarity, 4),
-            "l2_distance": round(verified.best.l2_distance, 4),
-            "threshold": verified.best.threshold,
-            "verdict": verified.best.verdict,
-            "faces_detected": verified.faces_detected,
-            "image_sha256": verified.image_sha256,
-            "page_link_status": verified.page_link_status,
+            "page_url": primary.result.page_url,
+            "image_url_used": primary.image_url_used,
+            "image_origin": primary.image_origin,
+            "source": primary.result.source,
+            "platform": primary.result.platform,
+            "title": primary.result.title,
+            "similarity": round(primary.best.similarity, 4),
+            "l2_distance": round(primary.best.l2_distance, 4),
+            "threshold": primary.best.threshold,
+            "verdict": primary.best.verdict,
+            "faces_detected": primary.faces_detected,
+            "image_sha256": primary.image_sha256,
+            "page_link_status": primary.page_link_status,
+            "validated_sources_count": len(validated_sources),
+            "validated_sources": [s.to_summary_dict(include_audit=True) for s in validated_sources],
         },
     )
 
-    return verified
+    return primary, validated_sources
 
 
 def _blockchain_register(
@@ -337,6 +389,40 @@ def _blockchain_register(
     registry = load_registry(config.rpc_url, config.contract_address)
     ui.info(f"Network: {registry.network.name} (chain {registry.network.chain_id})")
     ui.info(f"Contract: {registry.address}")
+
+    # Idempotency check: if this record is already anchored, do not broadcast redundant tx
+    existing_record = registry.get_record(rec_hash)
+    if existing_record is not None:
+        ui.ok(f"Record hash already committed on-chain at block timestamp {existing_record.block_timestamp}!")
+        ui.kv("Submitter", existing_record.submitter)
+        ui.kv("Status", "Idempotent registration (re-used existing on-chain anchor)")
+        ui.event(
+            "chain_confirmed",
+            {
+                "tx_hash": None,
+                "block": None,
+                "block_timestamp": existing_record.block_timestamp,
+                "gas_used": 0,
+                "explorer_url": None,
+                "network": registry.network.name,
+                "chain_id": registry.network.chain_id,
+                "contract": registry.address,
+                "idempotent": True,
+            },
+        )
+        return {
+            "network": registry.network.name,
+            "chain_id": registry.network.chain_id,
+            "contract_address": registry.address,
+            "transaction_hash": None,
+            "block_number": None,
+            "block_timestamp": existing_record.block_timestamp,
+            "gas_used": 0,
+            "submitter": existing_record.submitter,
+            "explorer_tx_url": None,
+            "explorer_address_url": registry.network.address_url(registry.address),
+            "idempotent": True,
+        }
 
     receipt = registry.register(
         rec_hash,
@@ -363,6 +449,7 @@ def _blockchain_register(
             "network": registry.network.name,
             "chain_id": registry.network.chain_id,
             "contract": registry.address,
+            "idempotent": False,
         },
     )
 
@@ -420,10 +507,20 @@ def run(
     response = _search(image_path, original_bytes, config, on_progress=_ui_progress)
 
     # Stage 5
-    candidate = _verify_candidates(response, encoding, config, detector, encoder)
+    candidate, validated_sources = _verify_candidates(response, encoding, config, detector, encoder)
 
     # Build the verification record
     now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    # Preserve creation timestamp if same image was already verified to keep hashing deterministic
+    try:
+        if artifacts.default_verification_path().exists():
+            prev_payload, _ = artifacts.load_verification()
+            prev_rec = prev_payload.get("record", {})
+            if prev_rec.get("input", {}).get("sha256") == meta.sha256:
+                now = prev_rec.get("created_at", now)
+    except Exception:
+        pass
+
     vr = VerificationRecord(
         input_image=meta,
         search=response,
@@ -434,6 +531,7 @@ def run(
         threshold=config.match_threshold,
         review_threshold=config.review_threshold,
         created_at=now,
+        validated_sources=validated_sources,
     )
     record = vr.to_record()
     rec_hash = record_hash(record)
@@ -457,6 +555,9 @@ def run(
         "search_provider": response.provider,
         "result_count": response.count,
         "social_count": len(response.social_results),
+        "validated_sources_count": len(validated_sources),
+        "primary_candidate_rank": candidate.result.rank,
+        "validated_sources": [s.to_summary_dict(include_audit=True) for s in validated_sources],
         "results": [
             {**r.to_json(), "link_status": response.link_statuses.get(r.page_url)}
             for r in response.results
@@ -507,6 +608,7 @@ def run(
         "integrity_match": integrity_match,
         "on_chain_hash": on_chain_hash,
         "artifact_path": str(art_path),
+        "validated_sources": [s.to_summary_dict(include_audit=True) for s in validated_sources],
     }
 
 

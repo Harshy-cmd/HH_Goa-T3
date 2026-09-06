@@ -25,6 +25,12 @@
       </div>
     </div>
     <div class="header-right">
+      <button type="button" id="openInspectorBtn" class="inspector-btn" title="Open Technical Pipeline Inspector">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <span>Inspector</span>
+      </button>
       <span class="net-pill"><span class="net-dot"></span>Ethereum Sepolia</span>
       <span id="liveBadge" class="live-badge" hidden><span class="live-dot"></span>live</span>
     </div>
@@ -88,8 +94,17 @@
 
       <div class="console-wrap">
         <div class="console-bar">
-          <span class="dot red"></span><span class="dot amber"></span><span class="dot green"></span>
-          <span class="console-title">live log</span>
+          <div class="console-controls">
+            <span class="dot red"></span><span class="dot amber"></span><span class="dot green"></span>
+            <span class="console-title">live audit log</span>
+          </div>
+          <div class="console-filters" id="consoleFilters">
+            <button type="button" class="filter-btn active" data-filter="ALL">All</button>
+            <button type="button" class="filter-btn" data-filter="IMAGE">Face ID</button>
+            <button type="button" class="filter-btn" data-filter="SEARCH">Search</button>
+            <button type="button" class="filter-btn" data-filter="SOURCE">Sources</button>
+            <button type="button" class="filter-btn" data-filter="BLOCKCHAIN">Blockchain</button>
+          </div>
         </div>
         <div id="console" class="console" role="log" aria-live="polite"></div>
       </div>
@@ -160,6 +175,21 @@
             </div>
           </dl>
         </div>
+      </div>
+
+      <!-- Multi-Source Provenance Panel -->
+      <div id="sourcesBlock" class="sources-block" hidden>
+        <div class="sources-head">
+          <div class="sources-title-group">
+            <h3>Discovered &amp; Validated Sources</h3>
+            <span class="sources-subtitle">Multiple candidate pages verified with 128-D SFace cosine similarity</span>
+          </div>
+          <div class="sources-counts">
+            <span class="count-pill discovered"><strong id="discoveredCount">0</strong> discovered</span>
+            <span class="count-pill validated"><strong id="validatedCount">0</strong> validated matches</span>
+          </div>
+        </div>
+        <div id="sourcesList" class="sources-list"></div>
       </div>
 
       <!-- on-chain proof -->
@@ -235,6 +265,137 @@
   </footer>
 
   <div id="toast" class="toast" hidden></div>
+
+  <!-- TECHNICAL PIPELINE INSPECTOR MODAL -------------------------------- -->
+  <div id="inspectorModal" class="modal-backdrop" hidden>
+    <div class="modal-dialog" role="dialog" aria-labelledby="modalTitle" aria-modal="true">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="inspector-badge">EVALUATOR TOOL</span>
+          <h2 id="modalTitle">Technical Pipeline Inspector</h2>
+        </div>
+        <button type="button" id="closeInspectorBtn" class="modal-close" aria-label="Close Inspector">×</button>
+      </div>
+
+      <nav class="inspector-tabs">
+        <button type="button" class="tab-btn active" data-tab="tab-record">Canonical JSON &amp; Cryptography</button>
+        <button type="button" class="tab-btn" data-tab="tab-blockchain">Smart Contract &amp; Gas</button>
+        <button type="button" class="tab-btn" data-tab="tab-face">Face ID &amp; Biometrics</button>
+        <button type="button" class="tab-btn" data-tab="tab-infra">Render &amp; Memory Safety</button>
+      </nav>
+
+      <div class="modal-body">
+        <!-- Tab 1: Canonical Record -->
+        <section id="tab-record" class="tab-content active">
+          <div class="inspector-section-desc">
+            The exact canonical JSON representation hashed with SHA-256 before on-chain anchoring. Notice: strictly ordered keys, no whitespace, zero image bytes or face embeddings stored.
+          </div>
+          <div class="code-header">
+            <span class="code-label mono">Verification Record (Canonical JSON)</span>
+            <button type="button" id="copyRecordBtn" class="copy-btn">Copy JSON</button>
+          </div>
+          <pre id="inspectorRecordCode" class="code-block mono">{ "status": "Run pipeline or click Refresh to inspect latest record." }</pre>
+          <div class="crypto-formula">
+            <span class="formula-step">1. Canonical JSON</span>
+            <span class="formula-arrow">→</span>
+            <span class="formula-step">2. SHA-256 Digest</span>
+            <span class="formula-arrow">→</span>
+            <span class="formula-step">3. <code>bytes32</code> on Sepolia</span>
+          </div>
+        </section>
+
+        <!-- Tab 2: Blockchain -->
+        <section id="tab-blockchain" class="tab-content">
+          <div class="inspector-section-desc">
+            Smart contract details, verified bytecode, and idempotency protection on Ethereum Sepolia testnet.
+          </div>
+          <dl class="inspector-grid">
+            <div class="inspector-row">
+              <dt>Network</dt>
+              <dd class="mono" id="inspNetwork">Ethereum Sepolia (Chain ID: 11155111)</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Contract Address</dt>
+              <dd class="mono">
+                <a id="inspContractLink" class="ext-link" target="_blank" rel="noopener noreferrer">0x75d5e23637C091398867aA64287B8E6A6d2466be ↗</a>
+              </dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Solidity Interface</dt>
+              <dd class="mono">VerificationRegistry.sol (recordCount, getRecord, registerVerification, isRegistered)</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Idempotency Rule</dt>
+              <dd>Re-verifying the same image or record hash reuses the existing on-chain anchor without spending gas or reverting.</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Gas &amp; Cost Safety</dt>
+              <dd>Gas limit capped at 200k (~167k used), wallet funded with &gt;0.32 ETH (sufficient for ~1,880+ verifications).</dd>
+            </div>
+          </dl>
+        </section>
+
+        <!-- Tab 3: Face ID -->
+        <section id="tab-face" class="tab-content">
+          <div class="inspector-section-desc">
+            Computer vision models and face similarity configuration running locally via OpenCV DNN.
+          </div>
+          <dl class="inspector-grid">
+            <div class="inspector-row">
+              <dt>Detector Model</dt>
+              <dd class="mono">YuNet (face_detection_yunet_2023mar.onnx)</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Encoder Model</dt>
+              <dd class="mono">SFace (face_recognition_sface_2021dec.onnx, 128-D L2-normalized)</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Similarity Metric</dt>
+              <dd class="mono">Cosine Similarity (range: -1.0 to 1.0)</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Match Threshold</dt>
+              <dd class="mono" id="inspThreshold">0.82 (default match), 0.70 (manual review)</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Detected Face Box</dt>
+              <dd class="mono" id="inspFaceBox">Awaiting pipeline execution</dd>
+            </div>
+          </dl>
+        </section>
+
+        <!-- Tab 4: Infrastructure & Memory -->
+        <section id="tab-infra" class="tab-content">
+          <div class="inspector-section-desc">
+            Render Free Tier operational specifications and memory leak prevention measures.
+          </div>
+          <dl class="inspector-grid">
+            <div class="inspector-row">
+              <dt>RAM Budget</dt>
+              <dd class="mono">512 MB Hard Ceiling (Render free tier)</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Concurrency Guard</dt>
+              <dd class="mono">MAX_CONCURRENT_JOBS = 1 (Single-job queue with HTTP 429 backpressure)</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>Image Buffer Release</dt>
+              <dd>Explicit <code>del arr</code> and downscaling to 1024px prevents heap spikes during multi-candidate probes.</dd>
+            </div>
+            <div class="inspector-row">
+              <dt>SSE Keep-Alive</dt>
+              <dd>Generator-driven 15s heartbeats prevent Render reverse proxy from dropping idle blockchain confirmation sockets.</dd>
+            </div>
+          </dl>
+        </section>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" id="refreshInspectorBtn" class="ghost-btn">Refresh Data</button>
+        <button type="button" id="closeInspectorBtn2" class="secondary-btn">Close</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

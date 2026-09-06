@@ -122,7 +122,29 @@ class EventSink(ui.ConsoleSink):
         self._queue = queue
         self._step = 0
 
+    def _now(self) -> str:
+        import datetime
+        return datetime.datetime.now().strftime("%H:%M:%S")
+
+    def _classify_category(self, message: str, level: str) -> str:
+        if level == "fail":
+            return "ERROR"
+        msg_lower = message.lower()
+        if "tx hash" in msg_lower or "transaction" in msg_lower or "gas" in msg_lower or "receipt" in msg_lower or "confirmed" in msg_lower:
+            return "TRANSACTION"
+        if "chain" in msg_lower or "contract" in msg_lower or "sepolia" in msg_lower or self._step in (6, 7):
+            return "BLOCKCHAIN"
+        if "search" in msg_lower or "provider" in msg_lower or self._step == 4:
+            return "SEARCH"
+        if "candidate" in msg_lower or "source" in msg_lower or "verified" in msg_lower or self._step == 5:
+            return "SOURCE"
+        if "face" in msg_lower or "image" in msg_lower or "embed" in msg_lower or self._step in (1, 2, 3):
+            return "IMAGE"
+        return "SYSTEM"
+
     def _emit(self, event: dict[str, Any]) -> None:
+        if "time" not in event:
+            event["time"] = self._now()
         try:
             self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
         except RuntimeError:
@@ -131,37 +153,44 @@ class EventSink(ui.ConsoleSink):
 
     def step(self, index: int, total: int, title: str) -> None:
         self._step = index
-        self._emit({"type": "step", "index": index, "total": total, "title": title})
+        self._emit({"type": "step", "index": index, "total": total, "title": title, "category": "SYSTEM"})
 
     def ok(self, message: str) -> None:
-        self._emit({"type": "log", "level": "ok", "message": message, "step": self._step})
+        cat = self._classify_category(message, "ok")
+        self._emit({"type": "log", "level": "ok", "message": message, "step": self._step, "category": cat})
 
     def info(self, message: str) -> None:
-        self._emit({"type": "log", "level": "info", "message": message, "step": self._step})
+        cat = self._classify_category(message, "info")
+        self._emit({"type": "log", "level": "info", "message": message, "step": self._step, "category": cat})
 
     def warn(self, message: str) -> None:
-        self._emit({"type": "log", "level": "warn", "message": message, "step": self._step})
+        cat = self._classify_category(message, "warn")
+        self._emit({"type": "log", "level": "warn", "message": message, "step": self._step, "category": cat})
 
     def fail(self, message: str) -> None:
-        self._emit({"type": "log", "level": "fail", "message": message, "step": self._step})
+        cat = self._classify_category(message, "fail")
+        self._emit({"type": "log", "level": "fail", "message": message, "step": self._step, "category": cat})
 
     def kv(self, key: str, value: object, indent: int = 2) -> None:
-        self._emit({"type": "kv", "key": key, "value": _jsonable(value), "step": self._step})
+        cat = self._classify_category(f"{key}: {value}", "info")
+        self._emit({"type": "kv", "key": key, "value": _jsonable(value), "step": self._step, "category": cat})
 
     def banner(self, title: str) -> None:
-        self._emit({"type": "banner", "title": title})
+        self._emit({"type": "banner", "title": title, "category": "SYSTEM"})
 
     def section(self, title: str) -> None:
-        self._emit({"type": "section", "title": title})
+        self._emit({"type": "section", "title": title, "category": "SYSTEM"})
 
     def verdict(self, label: str, passed: bool) -> None:
-        self._emit({"type": "verdict", "label": label, "passed": bool(passed)})
+        cat = "BLOCKCHAIN" if "INTEGRITY" in label or "VERIFICATION" in label else "SYSTEM"
+        self._emit({"type": "verdict", "label": label, "passed": bool(passed), "category": cat})
 
     def rule(self, char: str = "=") -> None:
         return None  # purely visual in the terminal; irrelevant to the web stream
 
     def event(self, kind: str, payload: dict[str, Any]) -> None:
-        self._emit({"type": "milestone", "kind": kind, "payload": _jsonable(payload)})
+        cat = "BLOCKCHAIN" if "chain" in kind or "record" in kind else "SOURCE" if "source" in kind or "candidate" in kind else "IMAGE"
+        self._emit({"type": "milestone", "kind": kind, "payload": _jsonable(payload), "category": cat})
 
 
 def _sse(event: dict[str, Any]) -> str:
@@ -176,6 +205,36 @@ def _sse(event: dict[str, Any]) -> str:
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"status": "ok", "running": _running, "max_concurrent": MAX_CONCURRENT}
+
+
+@app.get("/api/pipeline-info")
+async def pipeline_info() -> dict[str, Any]:
+    """Expose pipeline architecture metadata for the Technical Pipeline Inspector."""
+    config = Config.load()
+    return {
+        "schema_version": "1.0",
+        "contract_address": config.contract_address,
+        "network": "Sepolia Testnet",
+        "chain_id": 11155111,
+        "search_provider": config.search_provider,
+        "detector": "YuNet (OpenCV)",
+        "encoder": "SFace (128-D normalized embedding, cosine metric)",
+        "match_threshold": config.match_threshold,
+        "review_threshold": config.review_threshold,
+        "max_concurrent": MAX_CONCURRENT,
+        "memory_budget": "512 MB Free Tier Safe (Render)",
+        "contract_explorer": f"https://sepolia.etherscan.io/address/{config.contract_address}" if config.contract_address else None,
+    }
+
+
+@app.get("/api/latest-artifact")
+async def latest_artifact() -> Any:
+    """Return the raw JSON artifact of the most recent verification run."""
+    try:
+        payload, _ = artifacts.load_verification(None)
+        return payload
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"No artifact available: {exc}")
 
 
 @app.get("/")
