@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Face ID + Blockchain Verification</title>
+  <meta name="description" content="Detect a face, find it across the web by reverse image search, verify the match, and anchor a tamper-evident record on Ethereum Sepolia." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e14'/%3E%3Cpath d='M9 12v-2a3 3 0 0 1 3-3h2M23 12v-2a3 3 0 0 0-3-3h-2M9 20v2a3 3 0 0 0 3 3h2M23 20v2a3 3 0 0 1-3 3h-2' stroke='%2322d3ee' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='15' r='3' fill='%2334d399'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="26" height="26">
+          <path d="M9 12v-2a3 3 0 0 1 3-3h2M23 12v-2a3 3 0 0 0-3-3h-2M9 20v2a3 3 0 0 0 3 3h2M23 20v2a3 3 0 0 1-3 3h-2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <circle cx="16" cy="15" r="3" fill="var(--success)"/>
+        </svg>
+      </span>
+      <div class="brand-text">
+        <strong>Face&nbsp;ID <span class="brand-plus">+</span> Blockchain</strong>
+        <span class="brand-sub">reverse-search &amp; on-chain proof</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="net-pill"><span class="net-dot"></span>Ethereum Sepolia</span>
+      <span id="liveBadge" class="live-badge" hidden><span class="live-dot"></span>live</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- HERO / UPLOAD ----------------------------------------------------- -->
+    <section class="hero">
+      <h1>Prove a face is real — and record it on-chain.</h1>
+      <p class="lede">
+        Drop in a portrait. We detect the face, hunt for it across the web with
+        reverse image search, verify the strongest match with a 128-D face
+        embedding, then anchor a SHA-256 record on Ethereum so it can never be
+        altered unnoticed.
+      </p>
+    </section>
+
+    <section id="uploadCard" class="card upload-card">
+      <form id="uploadForm">
+        <label id="dropzone" class="dropzone" for="fileInput" tabindex="0" aria-label="Upload an image">
+          <input id="fileInput" type="file" accept="image/*,.avif,.heic,.heif,.bmp,.tiff,.gif" hidden />
+          <div id="dropPrompt" class="drop-prompt">
+            <svg class="drop-icon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4M12 4l-4 4M12 4l4 4"/>
+              <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+            </svg>
+            <div class="drop-title">Drag &amp; drop a photo, or <span class="link-underline">browse</span></div>
+            <div class="drop-hint">JPG · PNG · WebP · AVIF · HEIC · BMP · TIFF · GIF — up to 15&nbsp;MB</div>
+          </div>
+          <div id="dropPreview" class="drop-preview" hidden>
+            <img id="previewImg" alt="Selected image preview" />
+            <div class="preview-meta">
+              <div id="previewName" class="preview-name">—</div>
+              <div id="previewSize" class="preview-size muted">—</div>
+              <button type="button" id="clearBtn" class="ghost-btn">Choose a different image</button>
+            </div>
+          </div>
+        </label>
+
+        <div class="upload-actions">
+          <button type="submit" id="runBtn" class="primary-btn" disabled>
+            <span class="btn-label">Run verification</span>
+            <svg class="btn-arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+          <p class="consent-note">
+            Use only on images of <strong>yourself</strong> or with the subject's
+            consent. Faces are biometric data.
+          </p>
+        </div>
+      </form>
+    </section>
+
+    <!-- PIPELINE ---------------------------------------------------------- -->
+    <section id="pipelineCard" class="card pipeline-card" hidden>
+      <div class="card-head">
+        <h2>Verification pipeline</h2>
+        <span id="pipelineStatus" class="status-chip running">running…</span>
+      </div>
+
+      <ol id="stageRail" class="stage-rail"></ol>
+
+      <div class="console-wrap">
+        <div class="console-bar">
+          <span class="dot red"></span><span class="dot amber"></span><span class="dot green"></span>
+          <span class="console-title">live log</span>
+        </div>
+        <div id="console" class="console" role="log" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- RESULT ------------------------------------------------------------ -->
+    <section id="resultCard" class="card result-card" hidden>
+      <div class="card-head">
+        <h2>Match &amp; on-chain proof</h2>
+        <span id="verdictBadge" class="verdict-badge">—</span>
+      </div>
+
+      <div class="result-grid">
+        <!-- input + matched images -->
+        <div class="images-row">
+          <figure class="img-figure">
+            <figcaption>Input face</figcaption>
+            <div id="inputFrame" class="img-frame">
+              <img id="inputImg" alt="Input face" />
+              <div id="boxLayer" class="box-layer"></div>
+            </div>
+          </figure>
+          <div class="match-arrow" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </div>
+          <figure class="img-figure">
+            <figcaption>Matched candidate</figcaption>
+            <div class="img-frame">
+              <img id="matchImg" alt="Matched candidate image" />
+              <div id="matchImgFallback" class="img-fallback" hidden>image unavailable</div>
+            </div>
+          </figure>
+        </div>
+
+        <!-- similarity + evidence -->
+        <div class="detail-col">
+          <div class="gauge-block">
+            <div class="gauge-head">
+              <span>Face similarity</span>
+              <span id="simValue" class="gauge-value mono">—</span>
+            </div>
+            <div class="gauge-track">
+              <div id="gaugeFill" class="gauge-fill"></div>
+              <div id="gaugeThreshold" class="gauge-threshold" title="match threshold"></div>
+            </div>
+            <div class="gauge-legend muted">
+              <span>0.0</span>
+              <span id="thresholdLabel">threshold —</span>
+              <span>1.0</span>
+            </div>
+          </div>
+
+          <dl class="kv-list">
+            <div class="kv-row">
+              <dt>Source</dt>
+              <dd id="matchSource" class="mono">—</dd>
+            </div>
+            <div class="kv-row">
+              <dt>Evidence image</dt>
+              <dd><a id="evidenceLink" class="ext-link" target="_blank" rel="noopener noreferrer">open verified image ↗</a></dd>
+            </div>
+            <div class="kv-row">
+              <dt>Source page</dt>
+              <dd class="page-cell">
+                <a id="pageLink" class="ext-link" target="_blank" rel="noopener noreferrer">open source page ↗</a>
+                <span id="pageStatus" class="link-status">—</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      <!-- on-chain proof -->
+      <div class="proof-block">
+        <div class="proof-head">
+          <h3>Tamper-evident record</h3>
+          <span id="integrityBadge" class="integrity-badge">INTEGRITY: —</span>
+        </div>
+        <div class="hash-chip" id="hashChip" role="button" tabindex="0" title="Click to copy">
+          <span class="hash-label">SHA-256</span>
+          <code id="recordHash" class="mono">—</code>
+          <span class="copy-hint">copy</span>
+        </div>
+        <div class="chain-grid">
+          <div class="chain-item">
+            <span class="chain-label">Transaction</span>
+            <a id="txLink" class="ext-link mono" target="_blank" rel="noopener noreferrer">—</a>
+          </div>
+          <div class="chain-item">
+            <span class="chain-label">Block</span>
+            <span id="blockNum" class="mono">—</span>
+          </div>
+          <div class="chain-item">
+            <span class="chain-label">Gas used</span>
+            <span id="gasUsed" class="mono">—</span>
+          </div>
+          <div class="chain-item">
+            <span class="chain-label">Network</span>
+            <span id="chainNet" class="mono">—</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VERIFY / TAMPER --------------------------------------------------- -->
+    <section id="verifyCard" class="card verify-card" hidden>
+      <div class="card-head">
+        <h2>Re-verify &amp; tamper test</h2>
+      </div>
+      <p class="muted verify-intro">
+        Re-read the latest record straight from the chain, or flip a single field
+        to watch the hash stop matching — the essence of tamper-evidence.
+      </p>
+      <div class="verify-actions">
+        <button id="reverifyBtn" class="secondary-btn">Re-verify latest</button>
+        <button id="tamperBtn" class="danger-btn">Simulate tamper</button>
+      </div>
+      <div id="verifyResult" class="verify-result" hidden>
+        <span id="verifyVerdict" class="verify-verdict">—</span>
+        <dl class="kv-list compact">
+          <div class="kv-row"><dt>Recomputed</dt><dd id="vRecomputed" class="mono">—</dd></div>
+          <div class="kv-row"><dt>On-chain</dt><dd id="vOnChain" class="mono">—</dd></div>
+        </dl>
+        <p id="verifyExplain" class="muted"></p>
+      </div>
+    </section>
+
+    <!-- ERROR ------------------------------------------------------------- -->
+    <section id="errorCard" class="card error-card" hidden>
+      <div class="error-head">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <span id="errorKind">ERROR</span>
+      </div>
+      <p id="errorMessage" class="error-message">Something went wrong.</p>
+      <p id="errorHint" class="error-hint" hidden></p>
+      <button id="errorRetry" class="secondary-btn">Start over</button>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Detect → search → verify → anchor → re-verify.</span>
+    <span class="muted">Records hold no image bytes or embeddings — only a hash.</span>
+  </footer>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

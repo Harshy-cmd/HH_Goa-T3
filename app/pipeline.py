@@ -12,14 +12,12 @@ from __future__ import annotations
 import datetime
 from pathlib import Path
 
-import cv2
-import numpy as np
-
 from . import artifacts, ui
 from .chain.registry import Registry, load_registry
 from .config import Config
 from .errors import (
     CandidateFetchError,
+    ImageError,
     NoFaceDetectedError,
     NoVerifiableCandidateError,
     PipelineError,
@@ -28,7 +26,7 @@ from .face.detector import FaceDetector, load_image, select_target_face
 from .face.encoder import FaceEncoder
 from .face.matcher import best_match
 from .hashing import record_hash, sha256_hex
-from .imaging import prepare_search_copy
+from .imaging import decode_to_bgr, downscale_bgr, prepare_search_copy
 from .models import (
     Artifact,
     CandidateVerification,
@@ -37,10 +35,15 @@ from .models import (
     VerificationRecord,
 )
 from .net.fetch import fetch_image
+from .net.reachability import LinkStatus, check_links_concurrent
 from .search.base import SearchQuery
 from .search.registry import build_provider
 
 TOTAL_STEPS = 7
+
+#: Cap on how many top-ranked page URLs get a reachability probe before
+#: verification. Keeps the added latency bounded on the free tier.
+_MAX_LINK_CHECKS = 15
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +66,16 @@ def _load_and_detect(
     ui.kv("Dimensions", f"{meta.width}x{meta.height}")
     ui.kv("SHA-256", meta.sha256[:16] + "...")
     ui.kv("Size", f"{meta.bytes_len / 1024:.0f} KB")
+    ui.event(
+        "image_loaded",
+        {
+            "filename": meta.filename,
+            "width": meta.width,
+            "height": meta.height,
+            "sha256": meta.sha256,
+            "bytes_len": meta.bytes_len,
+        },
+    )
 
     # Step 2 ---------------------------------------------------------------
     ui.step(2, TOTAL_STEPS, "Detecting faces")
@@ -75,6 +88,26 @@ def _load_and_detect(
     target = select_target_face(faces, index=face_index)
     if len(faces) > 1 and face_index is None:
         ui.info(f"Using largest face (face 0, {target.box.width}x{target.box.height} px)")
+
+    target_index = 0 if face_index is None else face_index
+    ui.event(
+        "faces_detected",
+        {
+            "count": len(faces),
+            "target_index": target_index,
+            "faces": [
+                {
+                    "index": i,
+                    "x": f.box.x,
+                    "y": f.box.y,
+                    "width": f.box.width,
+                    "height": f.box.height,
+                    "confidence": round(f.box.confidence, 4),
+                }
+                for i, f in enumerate(faces)
+            ],
+        },
+    )
 
     # Step 3 ---------------------------------------------------------------
     ui.step(3, TOTAL_STEPS, "Encoding face")
@@ -109,6 +142,27 @@ def _search(
         tag = f" [{r.platform}]" if r.platform else ""
         ui.kv(f"  #{r.rank}{tag}", _truncate(r.page_url, 80))
 
+    ui.event(
+        "search_results",
+        {
+            "provider": response.provider,
+            "result_count": response.count,
+            "social_count": social_count,
+            "results": [
+                {
+                    "rank": r.rank,
+                    "page_url": r.page_url,
+                    "image_url": r.image_url,
+                    "thumbnail_url": r.thumbnail_url,
+                    "platform": r.platform,
+                    "source": r.source,
+                    "title": r.title,
+                }
+                for r in response.results[:5]
+            ],
+        },
+    )
+
     return response
 
 
@@ -124,7 +178,18 @@ def _verify_candidates(
 
     from .search.social import prioritise
 
-    ordered = prioritise(response.results)
+    # Probe page-link reachability up front (bounded + concurrent), so ordering
+    # can prefer candidates whose source page a human can actually open, and so
+    # the surfaced page link is labelled honestly. This never filters or changes
+    # which candidate matches -- only the order candidates are tried.
+    page_urls = [r.page_url for r in response.results[:_MAX_LINK_CHECKS] if r.page_url]
+    link_map = check_links_concurrent(page_urls) if page_urls else {}
+    if link_map:
+        live = sum(1 for s in link_map.values() if s is LinkStatus.LIVE)
+        ui.info(f"Link check: {live}/{len(link_map)} source page link(s) live")
+    response.link_statuses = {url: status.value for url, status in link_map.items()}
+
+    ordered = prioritise(response.results, link_map)
     verified: CandidateVerification | None = None
     attempts: list[dict] = []
 
@@ -150,14 +215,16 @@ def _verify_candidates(
                 attempts.append({"rank": result.rank, "url": url, "status": f"fetch_failed: {exc.message}"})
                 continue
 
-            # Decode and detect faces
-            arr = cv2.imdecode(
-                np.frombuffer(fetched.data, dtype=np.uint8), cv2.IMREAD_COLOR
-            )
-            if arr is None:
+            # Decode (any format: JPEG/PNG/WebP via OpenCV, AVIF/HEIC via
+            # Pillow), then bound the resolution before detection to cap memory
+            # and time on large publisher images.
+            try:
+                arr = decode_to_bgr(fetched.data, filename=f"candidate #{result.rank}")
+            except ImageError:
                 ui.info(f"  #{result.rank}: could not decode image")
                 attempts.append({"rank": result.rank, "url": url, "status": "decode_failed"})
                 continue
+            arr = downscale_bgr(arr)
 
             cand_faces = detector.detect(arr)
             if not cand_faces:
@@ -182,6 +249,7 @@ def _verify_candidates(
             verdict_str = best.verdict
             ui.kv(f"  #{result.rank}", f"faces={len(cand_faces)} best_sim={best.similarity:.3f} -> {verdict_str}")
 
+            page_status = link_map.get(result.page_url)
             cv = CandidateVerification(
                 result=result,
                 image_sha256=fetched.sha256,
@@ -190,6 +258,7 @@ def _verify_candidates(
                 image_bytes_len=fetched.size,
                 faces_detected=len(cand_faces),
                 best=best,
+                page_link_status=page_status.value if page_status else None,
             )
 
             attempts.append({
@@ -199,6 +268,7 @@ def _verify_candidates(
                 "faces": len(cand_faces),
                 "similarity": best.similarity,
                 "verdict": verdict_str,
+                "page_link_status": page_status.value if page_status else None,
             })
 
             if best.is_match:
@@ -220,13 +290,37 @@ def _verify_candidates(
 
     ui.ok("Verified candidate found!")
     tag = f" [{verified.result.platform}]" if verified.result.platform else ""
+    page_label = _link_label(verified.page_link_status)
     ui.kv("Source", f"{verified.result.source or 'web'}{tag}")
-    ui.kv("URL", _truncate(verified.result.page_url, 80))
+    # The image URL is the reliable evidence: it renders the exact matched face
+    # and effectively always resolves, unlike the source page which may 404 or
+    # sit behind a login wall. Surface it first; show the page link, labelled.
+    ui.kv("Evidence image", _truncate(verified.image_url_used, 78))
+    ui.kv("Source page", f"{_truncate(verified.result.page_url, 60)} [{page_label}]")
     ui.kv("Image SHA-256", verified.image_sha256[:16] + "...")
     ui.kv("Faces detected", verified.faces_detected)
     ui.kv("Best similarity", f"{verified.best.similarity:.4f}")
     ui.kv("Threshold", f"{verified.best.threshold}")
     ui.kv("Verdict", verified.best.verdict)
+
+    ui.event(
+        "candidate_matched",
+        {
+            "page_url": verified.result.page_url,
+            "image_url_used": verified.image_url_used,
+            "image_origin": verified.image_origin,
+            "source": verified.result.source,
+            "platform": verified.result.platform,
+            "title": verified.result.title,
+            "similarity": round(verified.best.similarity, 4),
+            "l2_distance": round(verified.best.l2_distance, 4),
+            "threshold": verified.best.threshold,
+            "verdict": verified.best.verdict,
+            "faces_detected": verified.faces_detected,
+            "image_sha256": verified.image_sha256,
+            "page_link_status": verified.page_link_status,
+        },
+    )
 
     return verified
 
@@ -259,6 +353,19 @@ def _blockchain_register(
     if receipt.explorer_tx_url:
         ui.kv("Explorer", receipt.explorer_tx_url)
 
+    ui.event(
+        "chain_confirmed",
+        {
+            "tx_hash": receipt.transaction_hash,
+            "block": receipt.block_number,
+            "gas_used": receipt.gas_used,
+            "explorer_url": receipt.explorer_tx_url,
+            "network": registry.network.name,
+            "chain_id": registry.network.chain_id,
+            "contract": registry.address,
+        },
+    )
+
     return receipt.to_json()
 
 
@@ -282,8 +389,13 @@ def run(
     config: Config,
     *,
     face_index: int | None = None,
-) -> None:
-    """Execute the full pipeline: detect -> search -> verify -> chain -> check."""
+) -> dict:
+    """Execute the full pipeline: detect -> search -> verify -> chain -> check.
+
+    Returns a JSON-serialisable summary (artifact, record hash, integrity
+    verdict, artifact path). The CLI ignores it; the web layer streams it as the
+    terminal ``result`` event instead of re-reading files off ephemeral disk.
+    """
     config.require_search()
     config.require_signer()
     config.require_contract()
@@ -328,6 +440,7 @@ def run(
 
     ui.section("RECORD HASH")
     ui.kv("SHA-256", rec_hash)
+    ui.event("record_hashed", {"record_hash": rec_hash, "record": record})
 
     # Stage 6
     chain_data = _blockchain_register(record, rec_hash, candidate, config)
@@ -344,7 +457,10 @@ def run(
         "search_provider": response.provider,
         "result_count": response.count,
         "social_count": len(response.social_results),
-        "results": [r.to_json() for r in response.results],
+        "results": [
+            {**r.to_json(), "link_status": response.link_statuses.get(r.page_url)}
+            for r in response.results
+        ],
     }
     artifacts.write_candidates(cand_data)
 
@@ -360,19 +476,38 @@ def run(
 
     # Final verdict
     ui.section("INTEGRITY VERIFICATION")
+    on_chain_hash = on_chain.record_hash if on_chain else None
+    integrity_match = bool(on_chain) and rec_hash == on_chain_hash
     if on_chain:
         ui.kv("Local SHA-256", rec_hash[:32] + "...")
         ui.kv("On-chain SHA-256", on_chain.record_hash[:32] + "...")
-        match = rec_hash == on_chain.record_hash
-        ui.verdict("INTEGRITY CHECK", match)
+        ui.verdict("INTEGRITY CHECK", integrity_match)
     else:
         ui.warn("Could not read back from chain (may need a block)")
         ui.verdict("INTEGRITY CHECK", False)
+
+    ui.event(
+        "integrity",
+        {
+            "match": integrity_match,
+            "local_hash": rec_hash,
+            "on_chain_hash": on_chain_hash,
+            "artifact_path": str(art_path),
+        },
+    )
 
     ui.section("PIPELINE COMPLETE")
     ui.ok("All stages completed successfully.")
     ui.info(f"To re-verify: python -m app verify")
     ui.info(f"To tamper-test: edit artifacts/latest_verification.json, then re-verify")
+
+    return {
+        "artifact": artifact.to_json(),
+        "record_hash": rec_hash,
+        "integrity_match": integrity_match,
+        "on_chain_hash": on_chain_hash,
+        "artifact_path": str(art_path),
+    }
 
 
 def verify(artifact_path: str | None, config: Config) -> None:
@@ -532,6 +667,32 @@ def doctor(config: Config) -> None:
     ui.ok("Pre-flight checks complete.")
 
 
+def download_models() -> None:
+    """Download the face model weights (YuNet + SFace).
+
+    Intended for a deploy build step so the ~38 MB weights are baked into the
+    image and survive free-tier spin-down, instead of being fetched on the first
+    (user-facing) request.
+    """
+    from .face.models_store import ensure_all
+
+    ui.banner("DOWNLOAD FACE MODELS")
+    paths = ensure_all(on_progress=_ui_progress)
+    for name, path in paths.items():
+        ui.ok(f"{name}: {path}")
+    ui.ok("All model weights present.")
+
+
+def precompile_contract() -> None:
+    """(Re)generate the committed contract artifact from source (dev helper)."""
+    from .chain.compile import precompile
+
+    ui.banner("PRECOMPILE CONTRACT")
+    path = precompile(on_progress=_ui_progress)
+    ui.ok(f"Wrote committed artifact: {path}")
+    ui.info("Commit this file so runtime installs need no Solidity toolchain.")
+
+
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
@@ -539,6 +700,16 @@ def doctor(config: Config) -> None:
 
 def _ui_progress(message: str) -> None:
     ui.info(message)
+
+
+def _link_label(status: str | None) -> str:
+    """Human-facing label for a stored page-link status value."""
+    if not status:
+        return "unverified"
+    try:
+        return LinkStatus(status).label
+    except ValueError:
+        return status
 
 
 def _truncate(s: str, limit: int = 80) -> str:

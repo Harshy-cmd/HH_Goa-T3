@@ -93,10 +93,40 @@ def _with_platform(result: SearchResult, platform: str | None) -> SearchResult:
     )
 
 
-def prioritise(results: list[SearchResult]) -> list[SearchResult]:
-    """Order results for verification: social first, then provider rank.
+def prioritise(
+    results: list[SearchResult],
+    link_statuses: dict[str, str] | None = None,
+) -> list[SearchResult]:
+    """Order results for verification.
 
-    Provider rank is preserved on each result, so the artifact records where the
-    chosen candidate actually appeared in the provider's own ordering.
+    Without ``link_statuses`` the order is the original one: social hits first,
+    then provider rank. When a reachability map is supplied, candidates whose
+    *page* link a human can actually open are tried first, so the link surfaced
+    alongside a match is more likely to work:
+
+        live+social -> live -> login-wall+social -> login-wall -> unprobed -> dead
+
+    Provider rank breaks ties, so it is preserved as the secondary ordering and
+    the artifact still records where the chosen candidate sat in the provider's
+    own ranking. Nothing is ever filtered out -- ordering only.
+
+    This does not change the face-match logic: the matcher still decides *whether*
+    a candidate matches. It only changes the order in which candidates are tried
+    (and the pipeline short-circuits on the first match).
     """
-    return sorted(results, key=lambda r: (r.platform is None, r.rank))
+    if not link_statuses:
+        return sorted(results, key=lambda r: (r.platform is None, r.rank))
+
+    def tier(result: SearchResult) -> int:
+        # LinkStatus is a str-enum, so "== 'live'" works for both enum and str.
+        status = link_statuses.get(result.page_url) or "unknown"
+        is_social = result.platform is not None
+        if status == "live":
+            return 0 if is_social else 1
+        if status == "login_wall":
+            return 2 if is_social else 3
+        if status == "dead":
+            return 5  # definitively broken: try last, but never drop
+        return 4  # unknown / unprobed: ahead of known-dead
+
+    return sorted(results, key=lambda r: (tier(r), r.rank))

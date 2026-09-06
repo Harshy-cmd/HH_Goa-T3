@@ -142,6 +142,10 @@ class SearchResponse:
     #: the provider was given a public URL instead of bytes.
     search_copy_sha256: str | None = None
     search_copy_bytes: int | None = None
+    #: page_url -> reachability label ("live"/"login_wall"/"dead"/"unknown"),
+    #: filled in during candidate verification. Audit/UI metadata only: it is not
+    #: read by ``VerificationRecord.to_record()`` and never enters the hash.
+    link_statuses: dict[str, str] = field(default_factory=dict)
 
     @property
     def count(self) -> int:
@@ -166,6 +170,10 @@ class CandidateVerification:
     image_bytes_len: int
     faces_detected: int
     best: FaceComparison
+    #: Reachability of ``result.page_url`` for a human visitor, when probed
+    #: ("live"/"login_wall"/"dead"/"unknown"). UI/audit metadata only -- not part
+    #: of the hashed record (``to_record()`` never reads it).
+    page_link_status: str | None = None
 
     @property
     def verified(self) -> bool:

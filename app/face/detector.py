@@ -9,6 +9,7 @@ import numpy as np
 
 from ..errors import ImageError, ModelError, NoFaceDetectedError
 from ..hashing import sha256_hex
+from ..imaging import decode_to_bgr
 from ..models import DetectedFace, FaceBox, InputImage
 from .models_store import YUNET, ensure_model
 
@@ -97,14 +98,11 @@ def load_image(path: str | Path) -> tuple[np.ndarray, InputImage]:
     if not data:
         raise ImageError(f"Input image is empty (0 bytes): {p}")
 
-    # imdecode from bytes rather than imread(path): imread silently returns None
-    # for non-ASCII paths on Windows.
-    array = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
-    if array is None:
-        raise ImageError(
-            f"Could not decode {p.name} as an image.",
-            hint="Supported formats: JPEG, PNG, WebP, BMP. Is the file corrupt?",
-        )
+    # decode_to_bgr decodes from bytes (imread(path) silently returns None for
+    # non-ASCII paths on Windows) and handles every common format -- JPEG/PNG/
+    # WebP/BMP/TIFF via OpenCV, AVIF/HEIC/HEIF via Pillow -- raising ImageError
+    # with a helpful hint when the bytes are not a decodable image.
+    array = decode_to_bgr(data, filename=p.name)
 
     height, width = array.shape[:2]
     meta = InputImage(
