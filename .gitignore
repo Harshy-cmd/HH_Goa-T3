@@ -30,8 +30,10 @@ samples/*
 !samples/ATTRIBUTION.md
 
 # --- solc / foundry caches ---------------------------------------------------
+# Only the repo-root build/ is a throwaway solc cache. contracts/build/ holds the
+# committed, precompiled contract artifact and IS tracked (anchored path below).
 .solcx/
-build/
+/build/
 tools/
 
 # --- editor / os -------------------------------------------------------------

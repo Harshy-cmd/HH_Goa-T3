@@ -37,7 +37,24 @@
       "Bash(./.venv/Scripts/python.exe -m pip install -q \"eth-tester[py-evm]\")",
       "Bash(mkdir -p tools)",
       "Bash(./tools/anvil.exe --version)",
-      "Bash(./tools/anvil.exe --port 8545 --silent)"
+      "Bash(./tools/anvil.exe --port 8545 --silent)",
+      "Bash(./.venv/Scripts/python.exe -m pip install -q \"opencv-python-headless==4.12.0.88\" \"numpy>=1.26,<3\" \"Pillow>=10.0\" \"pillow-heif\" \"requests>=2.31\" \"web3==7.16.0\" \"python-dotenv>=1.0\" \"fastapi\" \"uvicorn[standard]\" \"python-multipart\" \"pytest>=8.0\" \"py-solc-x==2.0.5\")",
+      "Bash(echo \"=== INSTALL DONE $? ===\")",
+      "Bash(./.venv/Scripts/python.exe -c \"import cv2, numpy, PIL, web3, fastapi, uvicorn; print\\('cv2', cv2.__version__\\); print\\('numpy', numpy.__version__\\); print\\('PIL', PIL.__version__\\); print\\('web3', web3.__version__\\); print\\('fastapi', fastapi.__version__\\)\")",
+      "Bash(./.venv/Scripts/python.exe -)",
+      "Bash(./.venv/Scripts/python.exe -m pytest tests/ -q)",
+      "Bash(git -C \"C:/Users/Deepak/OneDrive/Desktop/T3\" branch --show-current)",
+      "Bash(git -C \"C:/Users/Deepak/OneDrive/Desktop/T3\" status --porcelain=v1 -b)",
+      "Bash(git -C \"C:/Users/Deepak/OneDrive/Desktop/T3\" remote -v)",
+      "Bash(git -C \"C:/Users/Deepak/OneDrive/Desktop/T3\" log --oneline -6)",
+      "Bash(git -C \"C:/Users/Deepak/OneDrive/Desktop/T3\" ls-remote --heads origin)",
+      "Bash(git checkout *)",
+      "Bash(NO_COLOR=1 ./.venv/Scripts/python.exe -m app precompile)",
+      "Bash(git check-ignore *)",
+      "Bash(./.venv/Scripts/python.exe -c \"import app.server as s; print\\('server import OK'\\); print\\('routes:', sorted\\({r.path for r in s.app.routes}\\)\\); print\\('MAX_CONCURRENT=', s.MAX_CONCURRENT, 'HEARTBEAT_S=', s.HEARTBEAT_S\\)\")",
+      "Bash(./.venv/Scripts/python.exe -c \"import httpx; print\\('httpx', httpx.__version__\\)\")",
+      "Bash(./.venv/Scripts/python.exe -m pytest tests/ -q --collect-only)",
+      "Bash(./.venv/Scripts/python.exe -m pip install \"httpx>=0.27\" -q)"
     ]
   }
 }

@@ -66,6 +66,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Pre-flight checks: verify credentials and connectivity.",
     )
 
+    # --- download-models ---------------------------------------------------
+    sub.add_parser(
+        "download-models",
+        help="Download face model weights (use in a deploy build step).",
+    )
+
+    # --- precompile --------------------------------------------------------
+    sub.add_parser(
+        "precompile",
+        help="Regenerate the committed contract artifact from source (dev; needs py-solc-x).",
+    )
+
     return parser
 
 
@@ -97,6 +109,16 @@ def main(argv: list[str] | None = None) -> int:
             from .pipeline import doctor
 
             doctor(config)
+
+        elif args.command == "download-models":
+            from .pipeline import download_models
+
+            download_models()
+
+        elif args.command == "precompile":
+            from .pipeline import precompile_contract
+
+            precompile_contract()
 
         return 0
 

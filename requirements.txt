@@ -1,14 +1,26 @@
-# Face detection (YuNet) + face embedding (SFace) both ship inside the
-# opencv-python wheel as cv2.FaceDetectorYN / cv2.FaceRecognizerSF.
+# Runtime dependencies (CLI + web app). Dev-only tools live in
+# requirements-dev.txt so a production/Render install stays lean.
+
+# Face detection (YuNet) + face embedding (SFace) both ship inside the OpenCV
+# wheel as cv2.FaceDetectorYN / cv2.FaceRecognizerSF. The *headless* wheel drops
+# the GUI/libGL system dependencies this project never uses, which keeps slim
+# server images (e.g. Render's 512 MB free tier) small and avoids libGL errors.
 # Pinned to 4.x: OpenCV 5 has not been validated against this code.
-opencv-python==4.12.0.88
+opencv-python-headless==4.12.0.88
 numpy>=1.26,<3
-Pillow>=10.0                # only used to re-encode the <=500 KB search copy
+
+# Image decoding + the <=500 KB search-copy re-encode. Pillow 12+ decodes AVIF
+# natively; pillow-heif adds HEIC/HEIF (iPhone photos). Together they let the
+# pipeline accept any common image format, not just OpenCV's imdecode set.
+Pillow>=12.0
+pillow-heif>=1.0
 
 requests>=2.31              # search providers + candidate image download
 
 web3==7.16.0                # Ethereum JSON-RPC + contract calls
-py-solc-x==2.0.5            # downloads solc and compiles the registry contract
 python-dotenv>=1.0          # .env loading
 
-pytest>=8.0                 # unit tests (no network required)
+# Web app: FastAPI backend with Server-Sent Events, served by uvicorn.
+fastapi>=0.111
+uvicorn>=0.30
+python-multipart>=0.0.9     # multipart/form-data image upload

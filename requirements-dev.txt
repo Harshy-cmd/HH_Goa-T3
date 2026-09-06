@@ -1,0 +1,11 @@
+# Development + build dependencies. Install with:
+#     pip install -r requirements-dev.txt
+# This pulls in everything from requirements.txt plus the tools needed to run
+# the test suite and to (re)compile the Solidity contract. Neither is required
+# at runtime: the compiled contract artifact is committed under
+# contracts/build/, so a production install never needs a Solidity toolchain.
+-r requirements.txt
+
+pytest>=8.0                 # unit tests (no network required)
+py-solc-x==2.0.5            # downloads solc; only needed to regenerate the contract artifact
+httpx>=0.27                 # required by FastAPI's TestClient in tests/test_server.py
