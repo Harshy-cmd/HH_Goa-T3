@@ -41,6 +41,44 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="INDEX",
         help="If multiple faces, select by 0-based index (default: largest).",
     )
+    run_p.add_argument(
+        "--demo",
+        "--judge-mode",
+        action="store_true",
+        dest="demo",
+        help="Run in evaluator demonstration mode with structured dashboard and scorecard.",
+    )
+    run_p.add_argument(
+        "--plain",
+        "--raw",
+        action="store_true",
+        dest="plain",
+        help="Run in plain linear log mode instead of the structured evaluator dashboard.",
+    )
+
+    # --- demo --------------------------------------------------------------
+    demo_p = sub.add_parser(
+        "demo",
+        help="Run the evaluator demonstration mode with structured dashboard and scorecard.",
+    )
+    demo_p.add_argument(
+        "--image",
+        default="samples/images.jpeg",
+        help="Path to the input face image (default: samples/images.jpeg).",
+    )
+    demo_p.add_argument(
+        "--face",
+        type=int,
+        default=None,
+        metavar="INDEX",
+        help="If multiple faces, select by 0-based index (default: largest).",
+    )
+    demo_p.add_argument(
+        "--judge-mode",
+        action="store_true",
+        dest="judge_mode",
+        help="Alias for full evaluation scoring dashboard.",
+    )
 
     # --- verify ------------------------------------------------------------
     verify_p = sub.add_parser(
@@ -90,7 +128,12 @@ def main(argv: list[str] | None = None) -> int:
 
         config = Config.load()
 
-        if args.command == "run":
+        if args.command == "demo" or (args.command == "run" and not getattr(args, "plain", False)):
+            from .demo import run_demo
+
+            return run_demo(args.image, config, face_index=args.face)
+
+        elif args.command == "run":
             from .pipeline import run
 
             run(args.image, config, face_index=args.face)

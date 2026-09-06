@@ -7,8 +7,8 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111%2B-009688?logo=fastapi&logoColor=white)
 ![Solidity 0.8.28](https://img.shields.io/badge/Solidity-0.8.28-363636?logo=solidity&logoColor=white)
 ![Ethereum Sepolia](https://img.shields.io/badge/Ethereum-Sepolia-3C3C3D?logo=ethereum&logoColor=white)
-![Tests: 122 passing](https://img.shields.io/badge/tests-122%20passing-brightgreen)
-![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue)
+![Tests: 139 passing](https://img.shields.io/badge/tests-139%20passing-brightgreen)
+![v1.2.0](https://img.shields.io/badge/version-1.2.0-blue)
 
 ---
 
@@ -65,9 +65,13 @@ The project is a technical demonstration of how computer vision, public-web sear
 | | Feature | Description |
 |---|---|---|
 | 🌐 | **Web UI & Live Streaming** | Single-page app with drag-and-drop upload, 7-stage progress rail, categorized terminal console, and live SSE streaming |
+| 🌌 | **Ghost Fibers WebGL Canvas** | GPU-accelerated WebGL2 background with calm biometric wave physics and high-contrast atmospheric depth |
+| 🎨 | **Refined Typography & Colors** | Strict semantic hierarchy: soft white (`#F5F3FF`), lavender (`#B8B4C9`), neon coral (`#FF4D6D`), and mint (`#35E0A1`) |
+| 🖥️ | **Terminal Scorecard & Demo** | `python -m app demo` with box-drawing visual scorecard, Unicode border metrics, and stage audit tables |
 | 🔍 | **Technical Pipeline Inspector** | Dedicated evaluator tool modal exposing raw canonical JSON, cryptographic hash derivation, face geometry, and contract links |
 | 🗂️ | **Multi-Source Provenance** | Probes up to 10 candidates; records all validated matches in `validated_sources`; clearly separates discovered vs. validated sources |
 | ⚖️ | **Deterministic Primary Ranking** | Solves source volatility (e.g. Bill Gates NYT vs Instagram) using a deterministic 5-tier key (similarity bucket, link status, origin, rank, URL) |
+| 🔗 | **LinkedIn Redirect Resolution** | `extract_profile_url` unwraps Google redirects and search query params to produce direct, clickable social profile links |
 | ⛽ | **Blockchain Idempotency** | Checks on-chain registry before broadcasting; identical verified images reuse existing anchors without redundant gas or contract reverts |
 | 🛡️ | **Render 512MB RAM Safety** | Explicit `del arr` memory releases, resolution downscaling, and `MAX_CONCURRENT_JOBS=1` execution locks prevent OOM crashes |
 | 🖼️ | **Universal Image Support** | OpenCV-first with Pillow fallback & EXIF transpose: supports JPEG, PNG, WebP, BMP, TIFF, GIF, AVIF, and iPhone HEIC/HEIF |
@@ -80,7 +84,7 @@ The project is a technical demonstration of how computer vision, public-web sear
 | 🔗 | **Blockchain Registration** | SHA-256 of canonical JSON is committed on-chain via a Solidity smart contract on Ethereum Sepolia (or any EVM chain) |
 | 🛡️ | **Tamper Detection** | Modify any field in the artifact → recompute the hash → compare with the blockchain → `TAMPER DETECTED` (available in CLI and Web UI) |
 | 🏥 | **Pre-flight Diagnostics** | `doctor` command validates API keys, model weights, blockchain connectivity, and wallet balance before a run |
-| 🧪 | **122 Offline Unit Tests** | Hashing, multi-source ranking, idempotency, serialisation, matching, reachability, and server SSE — 100% passing |
+| 🧪 | **139 Offline Unit Tests** | Hashing, multi-source ranking, idempotency, serialisation, matching, reachability, social URLs, and server SSE — 100% passing |
 
 ---
 
@@ -90,7 +94,7 @@ The project is a technical demonstration of how computer vision, public-web sear
 |---|---|---|
 | **Language** | Python 3.10+ | Core runtime |
 | **Web Server** | FastAPI ≥ 0.111 + Uvicorn ≥ 0.30 | Async backend, staged uploads, SSE live progress streaming |
-| **Web Frontend** | Vanilla HTML5 / CSS3 / ES6 JS | Zero-build dark mode UI with gauge animations, stage rail, face overlay |
+| **Web Frontend** | Vanilla HTML5 / CSS3 / ES6 JS + WebGL2 | Zero-build dark mode UI with Ghost Fibers shader, gauge animations, stage rail |
 | **Face Detection** | OpenCV 4.12 — `cv2.FaceDetectorYN` (YuNet ONNX) | Millisecond-level face detection, ships in headless wheel |
 | **Face Recognition** | OpenCV 4.12 — `cv2.FaceRecognizerSF` (SFace ONNX) | 128-D face embeddings with published cosine threshold |
 | **Reverse Search (Primary)** | SerpAPI Google Lens API | Uploads image privately, returns visual matches with page/image URLs |
@@ -102,7 +106,7 @@ The project is a technical demonstration of how computer vision, public-web sear
 | **Contract Artifacts** | Committed `VerificationRegistry.json` | Precompiled ABI and bytecode (zero compiler needed at runtime) |
 | **Hashing & Security** | hashlib (stdlib) + canonical JSON | Deterministic SHA-256 digests over sorted, whitespace-free JSON |
 | **Configuration** | python-dotenv ≥ 1.0 | `.env` file loading with per-command validation |
-| **Testing** | pytest ≥ 8.0 + httpx ≥ 0.28 | 122 offline unit and server tests |
+| **Testing** | pytest ≥ 8.0 + httpx ≥ 0.28 | 139 offline unit and server tests |
 | **Array Operations** | NumPy ≥ 1.26 | Face embedding vectors and OpenCV interop |
 
 ---
@@ -265,8 +269,9 @@ flowchart TB
 ```
 HH-Goa-T3/
 ├── app/                           # Main Python package
-│   ├── __init__.py                # Package metadata, __version__ = "1.0.0"
-│   ├── __main__.py                # CLI entry point (run|verify|deploy|doctor|download-models|precompile)
+│   ├── __init__.py                # Package metadata, __version__ = "1.2.0"
+│   ├── __main__.py                # CLI entry point (run|demo|verify|deploy|doctor|download-models|precompile)
+│   ├── demo.py                    # Formatted terminal scorecard & box-drawing demo runner
 │   ├── pipeline.py                # End-to-end 7-stage orchestration with milestone events
 │   ├── config.py                  # .env loading + per-command validation
 │   ├── errors.py                  # Typed error hierarchy (15 error classes)
@@ -279,7 +284,9 @@ HH-Goa-T3/
 │   ├── web/                       # Zero-build SPA frontend
 │   │   ├── index.html             # UI layout: upload dropzone, 7-stage rail, gauge, console
 │   │   ├── styles.css             # Dark theme, glassmorphism, responsive styles
-│   │   └── app.js                 # Fetch-based SSE parser, canvas face overlay, tamper demo
+│   │   ├── fibers.js              # Ghost Fibers WebGL2 GPU shader background
+│   │   ├── app.js                 # Fetch-based SSE parser, canvas face overlay, tamper demo
+│   │   └── fonts/                 # Clash Display typography web font assets
 │   ├── face/                      # Computer vision subsystem
 │   │   ├── detector.py            # YuNet face detection (cv2.FaceDetectorYN)
 │   │   ├── encoder.py             # SFace 128-D encoding (cv2.FaceRecognizerSF)
@@ -290,7 +297,7 @@ HH-Goa-T3/
 │   │   ├── serpapi.py             # SerpAPI Google Lens (primary): upload → search
 │   │   ├── google_vision.py       # Google Vision WEB_DETECTION (fallback): inline base64
 │   │   ├── registry.py            # Provider factory
-│   │   └── social.py              # Social platform detection (20+ platforms) + ranking
+│   │   └── social.py              # Social platform detection (20+ platforms) + URL unwrap
 │   ├── chain/                     # Blockchain subsystem
 │   │   ├── client.py              # Web3 connection + network identification
 │   │   ├── compile.py             # 3-tier contract resolution (artifact → cache → solcx)
@@ -302,7 +309,7 @@ HH-Goa-T3/
 │   ├── VerificationRegistry.sol   # Solidity 0.8.28 smart contract
 │   └── build/
 │       └── VerificationRegistry.json # Precompiled contract artifact (ABI + bytecode)
-├── tests/                         # 115 offline unit & integration tests (pytest)
+├── tests/                         # 139 offline unit & integration tests (pytest)
 │   ├── test_hashing.py            # Canonical JSON, SHA-256, quantisation
 │   ├── test_imaging_decode.py     # Universal image decoders, EXIF transpose, downscale
 │   ├── test_matching.py           # 3-way verdict classification
@@ -310,13 +317,17 @@ HH-Goa-T3/
 │   ├── test_serialization.py      # Record round-trip through JSON
 │   ├── test_server.py             # FastAPI upload, SSE streaming, error events, verify
 │   ├── test_config.py             # Config validation, threshold checks
-│   └── test_social.py             # Social platform detection from URLs
+│   ├── test_social.py             # Social platform detection & URL redirect extraction
+│   ├── test_demo_formatting.py    # Box-drawing Unicode metrics, scorecard table layout
+│   └── test_multi_source_and_idempotency.py # Multi-source ranking & blockchain idempotency
 ├── models/                        # ONNX weights (gitignored, ~39 MB, fetched on first run)
 ├── samples/                       # Input images (gitignored — biometric data)
 │   └── ATTRIBUTION.md             # Guidance on selecting test images
 ├── artifacts/                     # Pipeline output (gitignored)
 ├── build/                         # Cached compiled contract ABI/bytecode (gitignored)
 ├── tools/                         # Local anvil.exe for offline EVM testing (gitignored)
+├── conftest.py                    # Root pytest test configuration
+├── pytest.ini                     # Pytest defaults and test paths
 ├── requirements.txt               # Pinned Python production dependencies
 ├── requirements-dev.txt           # Development & testing dependencies
 ├── render.yaml                    # Render Blueprint deployment specification
@@ -729,14 +740,15 @@ python -m app deploy
 | Command | Purpose |
 |---|---|
 | `python -m app run --image <path> [--face <index>]` | Full pipeline: detect → search → verify → chain → check |
+| `python -m app demo [--image <path>] [--face <index>]` | Terminal demo mode with box-drawing visual scorecard and audit logs |
 | `python -m app verify [--record <path>]` | Re-verify an artifact against the blockchain |
 | `python -m app deploy` | Compile and deploy a fresh `VerificationRegistry` contract |
 | `python -m app doctor` | Pre-flight checks: API keys, models, chain, wallet balance |
 | `python -m app download-models` | Pre-download YuNet & SFace ONNX model weights (~39 MB) |
 | `python -m app precompile` | Regenerate committed contract artifact (`contracts/build/VerificationRegistry.json`) |
 | `uvicorn app.server:app --port 8000` | Start the FastAPI web application with SSE streaming |
-| `python -m app --version` | Print version (currently `1.0.0`) |
-| `python -m pytest tests/ -v` | Run 115 offline unit & integration tests |
+| `python -m app --version` | Print version (currently `1.2.0`) |
+| `python -m pytest tests/ -v` | Run 139 offline unit & integration tests |
 
 ---
 
@@ -787,18 +799,20 @@ python -m app download-models
 python -m pytest tests/ -v
 ```
 
-**115 tests** across 8 test modules. All run offline — no API keys, no network, and no live blockchain required.
+**139 tests** across 10 test modules. All run offline — no API keys, no network, and no live blockchain required.
 
 | Module | Tests | What It Covers |
 |---|---:|---|
-| `test_hashing.py` | 15 | Canonical JSON byte-pinning, SHA-256, float quantisation, `to_bytes32`, determinism, NaN rejection |
-| `test_serialization.py` | 10 | `VerificationRecord.to_record()`, artifact round-trip, schema version, no-embedding-in-record, hash stability |
-| `test_config.py` | 8 | Threshold validation, per-command `require_*` checks, private key normalisation, invalid provider |
+| `test_hashing.py` | 19 | Canonical JSON byte-pinning, SHA-256, float quantisation, `to_bytes32`, determinism, NaN rejection |
+| `test_serialization.py` | 12 | `VerificationRecord.to_record()`, artifact round-trip, schema version, no-embedding-in-record, hash stability |
+| `test_config.py` | 12 | Threshold validation, per-command `require_*` checks, private key normalisation, invalid provider |
 | `test_matching.py` | 9 | Three-way verdict classification at and around thresholds, OpenCV constant pinning |
-| `test_social.py` | 14 | Platform detection for 20+ social platforms, subdomain handling, prioritisation ordering |
-| `test_imaging_decode.py` | 11 | Universal image decoders (JPEG, PNG, WebP, BMP, GIF, AVIF, HEIC), EXIF orientation transpose, downscale, empty-bytes rejection |
-| `test_reachability.py` | 17 | Concurrent link status classification (live, login-wall, dead), HEAD→GET fallback, timeouts, SSRF private IP protection |
-| `test_server.py` | 12 | FastAPI endpoints: upload validation, size caps, SSE streaming with mocked pipeline, single-use jobs, 429 concurrency guard, verify/tamper API |
+| `test_social.py` | 23 | Platform detection for 20+ social platforms, URL redirect extraction, Google query unwrap, direct profile parsing |
+| `test_imaging_decode.py` | 14 | Universal image decoders (JPEG, PNG, WebP, BMP, GIF, AVIF, HEIC), EXIF orientation transpose, downscale, empty-bytes rejection |
+| `test_reachability.py` | 22 | Concurrent link status classification (live, login-wall, dead), HEAD→GET fallback, timeouts, SSRF private IP protection |
+| `test_server.py` | 13 | FastAPI endpoints: upload validation, size caps, SSE streaming with mocked pipeline, single-use jobs, 429 concurrency guard, verify/tamper API |
+| `test_demo_formatting.py` | 8 | ANSI code stripping, Unicode box-drawing visual alignment, metric padding, terminal scorecard formatting |
+| `test_multi_source_and_idempotency.py` | 7 | Deterministic candidate ranking, secondary source tracking, on-chain registry pre-checking, duplicate verification idempotency |
 
 ### What Is Not Tested
 

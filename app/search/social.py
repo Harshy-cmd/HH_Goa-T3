@@ -8,6 +8,7 @@ out, or invents a result. Non-social results are kept and still reported.
 
 from __future__ import annotations
 
+import re
 from urllib.parse import urlparse
 
 from .base import SearchResult
@@ -63,6 +64,55 @@ def platform_for_url(url: str | None) -> str | None:
     # Regional variants such as pinterest.co.uk or facebook.com.br.
     if parts[0] == "pinterest":
         return "Pinterest"
+    return None
+
+
+def extract_profile_url(url: str | None) -> str | None:
+    """Derive a direct user profile link from a social page or post URL, if identifiable.
+
+    For LinkedIn posts (e.g. ``/posts/username_slug...`` or ``/feed/update/username_slug...``),
+    extracts the username to provide the direct profile link ``https://www.linkedin.com/in/username/``.
+    For X/Twitter, extracts the handle from status URLs.
+    """
+    if not url:
+        return None
+
+    # --- LinkedIn ----------------------------------------------------------
+    # Direct profile: /in/{username}
+    m = re.match(r"^https?://(?:[a-z]{2,3}\.)?linkedin\.com/in/([a-zA-Z0-9\-_%]+)", url, re.IGNORECASE)
+    if m:
+        username = m.group(1).strip("/")
+        return f"https://www.linkedin.com/in/{username}/"
+
+    # Post or Feed update with username slug: /posts/{username}_{slug} or /feed/update/{username}_{slug}
+    # LinkedIn conventions separate the member identifier from the post slug with an underscore '_'
+    m = re.match(
+        r"^https?://(?:[a-z]{2,3}\.)?linkedin\.com/(?:posts|feed/update)/([a-zA-Z0-9\-_%]+?)_[a-zA-Z0-9\-_%]+",
+        url,
+        re.IGNORECASE,
+    )
+    if m:
+        username = m.group(1).strip("/")
+        if username.lower() not in ("urn", "activity", "update", "feed"):
+            return f"https://www.linkedin.com/in/{username}/"
+
+    # --- X / Twitter -------------------------------------------------------
+    # Status: /{username}/status/{id}
+    m = re.match(
+        r"^https?://(?:www\.)?(?:twitter\.com|x\.com)/([a-zA-Z0-9_]{1,25})/status/\d+",
+        url,
+        re.IGNORECASE,
+    )
+    if m:
+        handle = m.group(1)
+        if handle.lower() not in ("i", "home", "explore", "notifications", "search"):
+            return f"https://x.com/{handle}"
+
+    # --- Reddit ------------------------------------------------------------
+    m = re.match(r"^https?://(?:www\.|old\.)?reddit\.com/u(?:ser)?/([a-zA-Z0-9_\-]+)", url, re.IGNORECASE)
+    if m:
+        return f"https://www.reddit.com/user/{m.group(1)}"
+
     return None
 
 

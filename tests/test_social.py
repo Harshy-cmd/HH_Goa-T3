@@ -1,6 +1,6 @@
 """Tests for social platform detection from URLs."""
 
-from app.search.social import platform_for_url, annotate, prioritise
+from app.search.social import platform_for_url, extract_profile_url, annotate, prioritise
 from app.models import SearchResult
 
 
@@ -63,3 +63,40 @@ class TestPrioritise:
         ordered = prioritise(results)
         assert ordered[0].rank == 1  # Reddit rank 1
         assert ordered[1].rank == 3  # X rank 3
+
+
+class TestExtractProfileUrl:
+    def test_linkedin_profile(self):
+        url = "https://www.linkedin.com/in/vairagya-32b8692b4"
+        assert extract_profile_url(url) == "https://www.linkedin.com/in/vairagya-32b8692b4/"
+
+    def test_linkedin_regional_profile(self):
+        url = "https://in.linkedin.com/in/vairagya-32b8692b4/"
+        assert extract_profile_url(url) == "https://www.linkedin.com/in/vairagya-32b8692b4/"
+
+    def test_linkedin_post_with_slug(self):
+        url = "https://www.linkedin.com/posts/vairagya-32b8692b4_after-school-coding-activity-7123456789012-abcd"
+        assert extract_profile_url(url) == "https://www.linkedin.com/in/vairagya-32b8692b4/"
+
+    def test_linkedin_feed_update_with_slug(self):
+        url = "https://www.linkedin.com/feed/update/vairagya-32b8692b4_after-school-activity-123456"
+        assert extract_profile_url(url) == "https://www.linkedin.com/in/vairagya-32b8692b4/"
+
+    def test_x_status(self):
+        url = "https://x.com/billgates/status/1234567890"
+        assert extract_profile_url(url) == "https://x.com/billgates"
+
+    def test_twitter_status(self):
+        url = "https://twitter.com/satyanadella/status/9876543210"
+        assert extract_profile_url(url) == "https://x.com/satyanadella"
+
+    def test_reddit_user(self):
+        url = "https://www.reddit.com/user/spez"
+        assert extract_profile_url(url) == "https://www.reddit.com/user/spez"
+
+    def test_non_social(self):
+        assert extract_profile_url("https://www.nytimes.com/2025/01/01/tech.html") is None
+
+    def test_empty_or_none(self):
+        assert extract_profile_url(None) is None
+        assert extract_profile_url("") is None
