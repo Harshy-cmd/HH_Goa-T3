@@ -1,12 +1,13 @@
 # Face ID + Blockchain Verification
 
-> Detect a face, search the web for it, verify the match, and commit a tamper-proof fingerprint to an Ethereum blockchain — all in a single CLI command.
+> Detect a face, search the web for it, verify the match, and commit a tamper-proof fingerprint to an Ethereum blockchain — all in a single CLI command or interactive web app.
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![OpenCV 4.12](https://img.shields.io/badge/OpenCV-4.12-5C3EE8?logo=opencv&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111%2B-009688?logo=fastapi&logoColor=white)
 ![Solidity 0.8.28](https://img.shields.io/badge/Solidity-0.8.28-363636?logo=solidity&logoColor=white)
 ![Ethereum Sepolia](https://img.shields.io/badge/Ethereum-Sepolia-3C3C3D?logo=ethereum&logoColor=white)
-![Tests: 66 passing](https://img.shields.io/badge/tests-66%20passing-brightgreen)
+![Tests: 115 passing](https://img.shields.io/badge/tests-115%20passing-brightgreen)
 ![v1.0.0](https://img.shields.io/badge/version-1.0.0-blue)
 
 ---
@@ -19,12 +20,14 @@
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Core Application Flow](#core-application-flow)
+- [Web Application & Live Streaming](#web-application--live-streaming)
 - [Data Model](#data-model)
 - [Smart Contract](#smart-contract)
 - [Environment Variables](#environment-variables)
 - [Installation & Setup](#installation--setup)
 - [Usage](#usage)
 - [Available Commands](#available-commands)
+- [Deployment (Render)](#deployment-render)
 - [Testing](#testing)
 - [Security & Privacy](#security--privacy)
 - [Known Limitations](#known-limitations)
@@ -57,15 +60,18 @@ The project is a technical demonstration of how computer vision, public-web sear
 
 | | Feature | Description |
 |---|---|---|
+| 🌐 | **Web UI & Live Streaming** | Modern single-page app with drag-and-drop upload, 7-stage progress rail, terminal console, and live Server-Sent Events (SSE) |
+| 🖼️ | **Universal Image Support** | OpenCV-first with Pillow fallback & EXIF transpose: supports JPEG, PNG, WebP, BMP, TIFF, GIF, AVIF, and iPhone HEIC/HEIF |
+| 🔗 | **Link Liveness & Reachability** | Concurrent SSRF-safe link classification (HEAD→GET fallback) detects live pages, login walls, and dead links to prioritise evidence |
 | 🧠 | **Face Detection** | YuNet (OpenCV DNN) detects faces in milliseconds — no cmake, dlib, or GPU required |
 | 🔐 | **Face Encoding & Matching** | SFace produces 128-D embeddings; cosine similarity with a three-way verdict (MATCH / POSSIBLE MATCH / NO MATCH) using OpenCV's published threshold |
 | 🔍 | **Genuine Reverse Image Search** | SerpAPI Google Lens (primary) or Google Cloud Vision WEB_DETECTION (fallback) — live API calls, never cached or pre-seeded |
 | 📱 | **Social Media Prioritisation** | Results from X, Reddit, Instagram, Facebook, LinkedIn, TikTok, YouTube, and 15+ platforms are detected by URL and tried first |
 | ✅ | **Candidate Face Verification** | Candidate images are downloaded, faces are detected and encoded, and cosine similarity is computed against the input |
 | 🔗 | **Blockchain Registration** | SHA-256 of canonical JSON is committed on-chain via a Solidity smart contract on Ethereum Sepolia (or any EVM chain) |
-| 🛡️ | **Tamper Detection** | Modify any field in the artifact → recompute the hash → compare with the blockchain → `TAMPER DETECTED` |
+| 🛡️ | **Tamper Detection** | Modify any field in the artifact → recompute the hash → compare with the blockchain → `TAMPER DETECTED` (available in CLI and Web UI) |
 | 🏥 | **Pre-flight Diagnostics** | `doctor` command validates API keys, model weights, blockchain connectivity, and wallet balance before a run |
-| 🧪 | **66 Offline Unit Tests** | Hashing, serialisation round-trips, matching logic, config validation, social detection — no network or API keys needed |
+| 🧪 | **115 Offline Unit Tests** | Hashing, serialisation, matching, config, social detection, reachability, universal decode, and server SSE — 100% offline |
 | 🖥️ | **Clean CLI Output** | Step-by-step terminal output with colour, designed for unedited screen recordings |
 
 ---
@@ -75,19 +81,20 @@ The project is a technical demonstration of how computer vision, public-web sear
 | Layer | Technology | Purpose |
 |---|---|---|
 | **Language** | Python 3.10+ | Core runtime |
-| **Face Detection** | OpenCV 4.12 — `cv2.FaceDetectorYN` (YuNet ONNX) | Millisecond-level face detection, ships in the pip wheel |
+| **Web Server** | FastAPI ≥ 0.111 + Uvicorn ≥ 0.30 | Async backend, staged uploads, SSE live progress streaming |
+| **Web Frontend** | Vanilla HTML5 / CSS3 / ES6 JS | Zero-build dark mode UI with gauge animations, stage rail, face overlay |
+| **Face Detection** | OpenCV 4.12 — `cv2.FaceDetectorYN` (YuNet ONNX) | Millisecond-level face detection, ships in headless wheel |
 | **Face Recognition** | OpenCV 4.12 — `cv2.FaceRecognizerSF` (SFace ONNX) | 128-D face embeddings with published cosine threshold |
 | **Reverse Search (Primary)** | SerpAPI Google Lens API | Uploads image privately, returns visual matches with page/image URLs |
 | **Reverse Search (Fallback)** | Google Cloud Vision WEB_DETECTION | Inline base64 image, returns pages with matching images |
-| **Image Processing** | Pillow ≥ 10.0 | Re-encodes oversized images to fit provider upload limits |
-| **HTTP** | Requests ≥ 2.31 | Search API calls, candidate image downloads, model weight downloads |
+| **Image Processing** | Pillow ≥ 12.0 + pillow-heif ≥ 1.0 | Universal decoder (AVIF, HEIC, GIF) + downscaling for upload limits |
+| **Network & Reachability** | Requests ≥ 2.31 + SSRF protection | Candidate image fetch and concurrent link liveness classification |
 | **Blockchain** | web3.py 7.16 + Ethereum Sepolia | JSON-RPC, contract interaction, local signing, receipt polling |
 | **Smart Contract** | Solidity 0.8.28 — `VerificationRegistry.sol` | Immutable record hash storage, duplicate rejection, event emission |
-| **Contract Compilation** | py-solc-x 2.0.5 | Downloads and caches `solc`, no Node/Hardhat/Foundry required |
-| **Hashing** | hashlib (stdlib) | SHA-256 over deterministic canonical JSON |
-| **Serialisation** | json (stdlib) | Canonical JSON: sorted keys, no whitespace, no NaN, UTF-8 |
+| **Contract Artifacts** | Committed `VerificationRegistry.json` | Precompiled ABI and bytecode (zero compiler needed at runtime) |
+| **Hashing & Security** | hashlib (stdlib) + canonical JSON | Deterministic SHA-256 digests over sorted, whitespace-free JSON |
 | **Configuration** | python-dotenv ≥ 1.0 | `.env` file loading with per-command validation |
-| **Testing** | pytest ≥ 8.0 | 66 unit tests, all offline |
+| **Testing** | pytest ≥ 8.0 + httpx ≥ 0.28 | 115 offline unit and server tests |
 | **Array Operations** | NumPy ≥ 1.26 | Face embedding vectors and OpenCV interop |
 
 ---
@@ -96,22 +103,31 @@ The project is a technical demonstration of how computer vision, public-web sear
 
 ```mermaid
 flowchart TB
-    subgraph CLI["CLI (app/__main__.py)"]
+    subgraph UI_ENTRY["Entry Points"]
         direction LR
-        CMD_RUN["run"]
-        CMD_VERIFY["verify"]
-        CMD_DEPLOY["deploy"]
-        CMD_DOCTOR["doctor"]
+        subgraph CLI["CLI (app/__main__.py)"]
+            CMD_RUN["run"]
+            CMD_VERIFY["verify"]
+            CMD_DEPLOY["deploy"]
+            CMD_DOCTOR["doctor"]
+        end
+        subgraph WEB["Web App (FastAPI + SSE)"]
+            SERVER["app/server.py"]
+            SPA["app/web/ SPA"]
+            SINK["ui.EventSink (ContextVar)"]
+            SPA <-->|SSE Stream & JSON| SERVER
+            SERVER --> SINK
+        end
     end
 
     subgraph Pipeline["Pipeline Orchestration (app/pipeline.py)"]
         direction TB
-        S1["1. Load Image"]
+        S1["1. Load & Decode Image (CV2 + Pillow)"]
         S2["2. Detect Faces (YuNet)"]
         S3["3. Encode Face (SFace 128-D)"]
-        S4["4. Reverse Image Search"]
-        S5["5. Verify Candidates"]
-        S6["6. Register on Blockchain"]
+        S4["4. Reverse Image Search (SerpAPI / Vision)"]
+        S5["5. Reachability & Candidate Verification"]
+        S6["6. Register on Blockchain (EVM)"]
         S7["7. Re-verify from Chain"]
         S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
     end
@@ -122,15 +138,17 @@ flowchart TB
         MAT["best_match()"]
     end
 
-    subgraph Search["Search Module (app/search/)"]
+    subgraph Search["Search & Net (app/search/ + app/net/)"]
         SERP["SerpAPI Google Lens"]
         GVIS["Google Vision WEB_DETECTION"]
-        SOC["Social Platform Detection"]
+        SOC["Social Prioritisation"]
+        REACH["Reachability Classifier"]
+        FETCH["SSRF-safe Fetcher"]
     end
 
     subgraph Chain["Blockchain Module (app/chain/)"]
         WEB3["Web3 Client"]
-        SOLC["py-solc-x Compiler"]
+        ARTIFACT["Precompiled ABI/Bytecode"]
         REG["Registry Contract"]
     end
 
@@ -141,25 +159,26 @@ flowchart TB
     end
 
     CMD_RUN --> Pipeline
-    S2 --> DET
+    SINK -. captures stages & milestones .-> Pipeline
+    S1 & S2 --> DET
     S3 --> ENC
     S4 --> SERP & GVIS
     SERP & GVIS --> SOC
-    S5 --> MAT
+    S5 --> REACH & FETCH & MAT
     S6 --> REG
     S7 --> REG
-    REG --> WEB3
+    REG --> ARTIFACT & WEB3
     Pipeline --> Artifacts
 ```
 
 ### How Components Communicate
 
 - **CLI → Pipeline**: `__main__.py` parses `argparse` arguments and calls `pipeline.run()`, `pipeline.verify()`, `pipeline.deploy()`, or `pipeline.doctor()`.
-- **Pipeline → Face**: The pipeline creates `FaceDetector` and `FaceEncoder` instances, passes the BGR image array, and receives `DetectedFace` / `FaceEncoding` dataclass objects.
-- **Pipeline → Search**: A `ReverseImageSearchProvider` (selected by config) receives a `SearchQuery` and returns a `SearchResponse` containing normalised `SearchResult` objects. The social module annotates results with platform labels.
-- **Pipeline → Net**: Candidate image URLs are fetched via `net.fetch.fetch_image()`, which enforces SSRF protections and returns `FetchedImage` with a SHA-256 fingerprint.
-- **Pipeline → Chain**: The `Registry` class wraps a deployed smart contract instance; it handles `register()` (write) and `get_record()` (read) operations, signing transactions locally.
-- **Pipeline → Artifacts**: JSON files are written to `artifacts/` at the end of a successful run.
+- **Web UI → Server → Pipeline**: `app/server.py` exposes `/api/jobs` for staged file uploads and `/api/jobs/{id}/stream` for Server-Sent Events (SSE). It executes `pipeline.run()` in a bounded `ThreadPoolExecutor`, capturing every `ui.*` call via a `ContextVar`-isolated `EventSink` to push real-time stage progress and structured milestone events to the browser.
+- **Pipeline → Face**: The pipeline creates `FaceDetector` and `FaceEncoder` instances, routes image decoding through universal `decode_to_bgr()`, and receives `DetectedFace` / `FaceEncoding` dataclass objects.
+- **Pipeline → Search & Net**: A `ReverseImageSearchProvider` returns normalised `SearchResult` objects. `app/net/reachability.py` classifies candidate URLs concurrently (HEAD→GET fallback, login-walls, dead links) with SSRF safety so social and live links are verified first.
+- **Pipeline → Chain**: The `Registry` class wraps the deployed smart contract instance using precompiled artifacts (`contracts/build/VerificationRegistry.json`); it signs registration transactions locally and reads back immutable block receipts.
+- **Pipeline → Artifacts**: JSON verification records and candidate metadata are saved to `artifacts/` at the conclusion of a successful run.
 
 ---
 
@@ -169,15 +188,20 @@ flowchart TB
 HH-Goa-T3/
 ├── app/                           # Main Python package
 │   ├── __init__.py                # Package metadata, __version__ = "1.0.0"
-│   ├── __main__.py                # CLI entry point (argparse: run|verify|deploy|doctor)
-│   ├── pipeline.py                # End-to-end 7-stage orchestration
+│   ├── __main__.py                # CLI entry point (run|verify|deploy|doctor|download-models|precompile)
+│   ├── pipeline.py                # End-to-end 7-stage orchestration with milestone events
 │   ├── config.py                  # .env loading + per-command validation
 │   ├── errors.py                  # Typed error hierarchy (15 error classes)
 │   ├── models.py                  # All dataclasses: FaceBox → VerificationRecord → Artifact
 │   ├── hashing.py                 # Canonical JSON serialisation + SHA-256
-│   ├── imaging.py                 # Search copy preparation (downscale to fit upload limits)
+│   ├── imaging.py                 # Universal decoder (CV2 + Pillow/AVIF/HEIC) + search downscale
 │   ├── artifacts.py               # Read/write JSON artifacts to artifacts/
-│   ├── ui.py                      # Minimal coloured terminal output
+│   ├── ui.py                      # Terminal output + ContextVar sink delegation
+│   ├── server.py                  # FastAPI backend with SSE streaming & heartbeat
+│   ├── web/                       # Zero-build SPA frontend
+│   │   ├── index.html             # UI layout: upload dropzone, 7-stage rail, gauge, console
+│   │   ├── styles.css             # Dark theme, glassmorphism, responsive styles
+│   │   └── app.js                 # Fetch-based SSE parser, canvas face overlay, tamper demo
 │   ├── face/                      # Computer vision subsystem
 │   │   ├── detector.py            # YuNet face detection (cv2.FaceDetectorYN)
 │   │   ├── encoder.py             # SFace 128-D encoding (cv2.FaceRecognizerSF)
@@ -191,16 +215,22 @@ HH-Goa-T3/
 │   │   └── social.py              # Social platform detection (20+ platforms) + ranking
 │   ├── chain/                     # Blockchain subsystem
 │   │   ├── client.py              # Web3 connection + network identification
-│   │   ├── compile.py             # Solidity compilation with cached artifacts
+│   │   ├── compile.py             # 3-tier contract resolution (artifact → cache → solcx)
 │   │   └── registry.py            # Deploy, register, read-back, balance checks
 │   └── net/
-│       └── fetch.py               # Candidate image download (SSRF-safe, streaming)
+│       ├── fetch.py               # Candidate image download (SSRF-safe, streaming)
+│       └── reachability.py        # Concurrent link liveness & status classifier
 ├── contracts/
-│   └── VerificationRegistry.sol   # Solidity 0.8.28 smart contract
-├── tests/                         # 66 offline unit tests (pytest)
+│   ├── VerificationRegistry.sol   # Solidity 0.8.28 smart contract
+│   └── build/
+│       └── VerificationRegistry.json # Precompiled contract artifact (ABI + bytecode)
+├── tests/                         # 115 offline unit & integration tests (pytest)
 │   ├── test_hashing.py            # Canonical JSON, SHA-256, quantisation
+│   ├── test_imaging_decode.py     # Universal image decoders, EXIF transpose, downscale
 │   ├── test_matching.py           # 3-way verdict classification
+│   ├── test_reachability.py       # Link status classification, HEAD->GET, SSRF safety
 │   ├── test_serialization.py      # Record round-trip through JSON
+│   ├── test_server.py             # FastAPI upload, SSE streaming, error events, verify
 │   ├── test_config.py             # Config validation, threshold checks
 │   └── test_social.py             # Social platform detection from URLs
 ├── models/                        # ONNX weights (gitignored, ~39 MB, fetched on first run)
@@ -209,7 +239,10 @@ HH-Goa-T3/
 ├── artifacts/                     # Pipeline output (gitignored)
 ├── build/                         # Cached compiled contract ABI/bytecode (gitignored)
 ├── tools/                         # Local anvil.exe for offline EVM testing (gitignored)
-├── requirements.txt               # Pinned Python dependencies
+├── requirements.txt               # Pinned Python production dependencies
+├── requirements-dev.txt           # Development & testing dependencies
+├── render.yaml                    # Render Blueprint deployment specification
+├── render-build.sh                # Render build script (pip install + model download)
 ├── .env.example                   # Configuration template with documentation
 ├── .gitignore                     # Secrets, weights, artifacts, samples excluded
 └── README.md                      # This file
@@ -284,6 +317,52 @@ sequenceDiagram
 6. If the recomputed hash matches on-chain → **PASS** (artifact is unmodified)
 7. If only the stored hash matches on-chain → **TAMPER DETECTED** (artifact was modified after registration)
 8. If neither hash is found on-chain → **FAIL** (never registered, or wrong network)
+
+---
+
+## Web Application & Live Streaming
+
+The repository includes a modern single-page web application (`app/web/`) backed by an asynchronous FastAPI server (`app/server.py`). It provides a visual, real-time frontend for the 7-stage verification pipeline.
+
+### Starting the Web Server
+
+Run with Uvicorn:
+
+```bash
+uvicorn app.server:app --reload --host 127.0.0.1 --port 8000
+```
+
+Then open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
+
+### Key Web Features
+
+- 📤 **Drag-and-Drop Staging**: Upload any portrait format (JPEG, PNG, WebP, AVIF, HEIC/HEIF). Files are validated, capped at 15 MB, and staged with temporary single-use UUIDs.
+- 🚊 **7-Stage Live Rail**: Tracks progress step-by-step through the pipeline: Load Image → Detect Faces → Encode Face → Reverse Search → Verify Candidates → Blockchain Registration → Verification.
+- 📟 **Embedded Live Console**: Streams colored log entries (`ok`, `info`, `warn`, `kv` tables) matching the terminal CLI output byte-for-byte.
+- 🎯 **Face Bounding Box Overlay**: Renders detected face coordinates directly onto the input image canvas.
+- 📊 **Animated Similarity Gauge**: Visual dial displaying cosine similarity with three-way classification (`MATCH`, `POSSIBLE MATCH`, `NO MATCH`).
+- 🔗 **Evidence & Reachability**: Candidate cards display publisher thumbnails, matched face crops, platform tags (Reddit, X, etc.), and link reachability status (`live`, `login-wall`, `dead`).
+- ⛓️ **On-Chain Proof**: Direct links to Sepolia block explorers (Etherscan, Blockscout), transaction hash, block number, gas used, and one-click copyable SHA-256 record hash.
+- 🧪 **One-Click Tamper Verification**: Interactive buttons allowing evaluators to verify the saved artifact against the blockchain, or intentionally inject a 1-bit float discrepancy to watch the cryptographic integrity check immediately flag `TAMPER DETECTED`.
+
+### Web Architecture & Concurrency
+
+```
+[Browser Fetch SSE] <--- HTTP text/event-stream <--- [FastAPI /api/jobs/{id}/stream]
+                                                                |
+                                             asyncio.Queue (Event Loop Thread)
+                                                                ^
+                                                     call_soon_threadsafe
+                                                                |
+                                             EventSink (ContextVar per request)
+                                                                |
+                                              pipeline.run() in ThreadPoolExecutor
+```
+
+- **Zero Global Mutation**: Every request binds an `EventSink` via Python `contextvars`. Logs and milestones emitted by `ui.*` are captured strictly for that client's stream.
+- **Generator-Driven Heartbeat**: Blockchain transaction receipt confirmation can take 15–180 seconds. While the worker thread is blocked on Web3 RPC, an async generator emits SSE comment pings (`: heartbeat\n\n`) every 15 seconds to prevent Render or browser connection timeouts.
+- **Bounded Concurrency & 429 Guard**: SFace embeddings and YuNet inferences on Render's 512 MB free tier are limited via `MAX_CONCURRENT_JOBS` (default: `1`). Additional requests receive clean `429 Too Many Requests` responses with user-friendly retry hints.
+- **Single-Use Verification Jobs**: Each staged job UUID can be streamed exactly once. Reconnects, refreshes, or duplicate submissions will not re-trigger unneeded gas expenditure.
 
 ---
 
@@ -575,8 +654,52 @@ python -m app deploy
 | `python -m app verify [--record <path>]` | Re-verify an artifact against the blockchain |
 | `python -m app deploy` | Compile and deploy a fresh `VerificationRegistry` contract |
 | `python -m app doctor` | Pre-flight checks: API keys, models, chain, wallet balance |
+| `python -m app download-models` | Pre-download YuNet & SFace ONNX model weights (~39 MB) |
+| `python -m app precompile` | Regenerate committed contract artifact (`contracts/build/VerificationRegistry.json`) |
+| `uvicorn app.server:app --port 8000` | Start the FastAPI web application with SSE streaming |
 | `python -m app --version` | Print version (currently `1.0.0`) |
-| `python -m pytest tests/ -v` | Run 66 offline unit tests |
+| `python -m pytest tests/ -v` | Run 115 offline unit & integration tests |
+
+---
+
+## Deployment (Render)
+
+The application includes turnkey deployment configuration for [Render](https://render.com) using **Render Blueprints** (`render.yaml`) and an automated build script (`render-build.sh`).
+
+### Deploy via Render Blueprint (Recommended)
+
+1. Push your repository to GitHub or GitLab.
+2. In the [Render Dashboard](https://dashboard.render.com), click **New +** → **Blueprint**.
+3. Connect your repository. Render automatically reads `render.yaml`.
+4. Fill in the secret environment variables when prompted:
+   - `SERPAPI_API_KEY`: Your SerpAPI key
+   - `RPC_URL`: `https://ethereum-sepolia-rpc.publicnode.com` (or your Infura/Alchemy endpoint)
+   - `PRIVATE_KEY`: Your throwaway testnet private key (`0x...`)
+   - `CONTRACT_ADDRESS`: The deployed `VerificationRegistry` contract address
+5. Click **Apply**. Render will run `./render-build.sh` and start the Uvicorn web server.
+
+### What `render-build.sh` Does
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 1. Upgrade pip and install production dependencies
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+# 2. Pre-fetch YuNet and SFace weights (~39 MB) during image build
+#    This eliminates cold-start model download delays for users
+python -m app download-models
+```
+
+### Free Tier Optimization
+
+- **Precompiled Contracts**: Runtime compilation (`py-solc-x`) is bypassed. The server uses precompiled bytecode and ABI committed under `contracts/build/VerificationRegistry.json`.
+- **Headless OpenCV**: Uses `opencv-python-headless` to eliminate libGL system dependencies and save memory.
+- **Candidate Downscaling**: Discovered candidate images are downscaled to max 1600px edge to prevent memory spikes on Render's 512 MB container limit.
+- **Bounded Concurrency**: `MAX_CONCURRENT_JOBS=1` ensures parallel requests don't exceed container memory, returning clean HTTP 429 with retry headers.
+- **SSE Heartbeat**: A 15-second generator-driven heartbeat (`: heartbeat\n\n`) keeps connections active through Render's proxy during long Ethereum transaction confirmations.
 
 ---
 
@@ -586,7 +709,7 @@ python -m app deploy
 python -m pytest tests/ -v
 ```
 
-**66 tests** across 5 test modules. All run offline — no API keys, no network, no blockchain required.
+**115 tests** across 8 test modules. All run offline — no API keys, no network, and no live blockchain required.
 
 | Module | Tests | What It Covers |
 |---|---:|---|
@@ -594,11 +717,14 @@ python -m pytest tests/ -v
 | `test_serialization.py` | 10 | `VerificationRecord.to_record()`, artifact round-trip, schema version, no-embedding-in-record, hash stability |
 | `test_config.py` | 8 | Threshold validation, per-command `require_*` checks, private key normalisation, invalid provider |
 | `test_matching.py` | 9 | Three-way verdict classification at and around thresholds, OpenCV constant pinning |
-| `test_social.py` | 14 | Platform detection for 10+ social platforms, subdomain handling, prioritisation ordering |
+| `test_social.py` | 14 | Platform detection for 20+ social platforms, subdomain handling, prioritisation ordering |
+| `test_imaging_decode.py` | 11 | Universal image decoders (JPEG, PNG, WebP, BMP, GIF, AVIF, HEIC), EXIF orientation transpose, downscale, empty-bytes rejection |
+| `test_reachability.py` | 17 | Concurrent link status classification (live, login-wall, dead), HEAD→GET fallback, timeouts, SSRF private IP protection |
+| `test_server.py` | 12 | FastAPI endpoints: upload validation, size caps, SSE streaming with mocked pipeline, single-use jobs, 429 concurrency guard, verify/tamper API |
 
 ### What Is Not Tested
 
-- **End-to-end integration** requires live API keys and a funded wallet, so there are no automated integration tests. The `doctor` command serves as a manual pre-flight check.
+- **End-to-end live blockchain integration** requires live API keys and a funded wallet, so there are no automated integration tests for live Ethereum writes. The `doctor` command serves as a manual pre-flight check.
 - **Face detection/encoding** depends on ONNX model weights and is tested via the pipeline itself, not mocked in unit tests.
 
 ---
@@ -609,7 +735,7 @@ python -m pytest tests/ -v
 
 | Area | Implementation |
 |---|---|
-| **SSRF protection** | `net/fetch.py` rejects URLs resolving to private, loopback, link-local, or reserved IP ranges |
+| **SSRF protection** | `net/fetch.py` and `net/reachability.py` reject URLs resolving to private, loopback, link-local, or reserved IP ranges |
 | **Private key handling** | Key never leaves the process, never logged, never serialised; transactions are signed locally |
 | **Model integrity** | Downloaded ONNX weights are verified against pinned SHA-256 digests after download |
 | **Secrets management** | `.env` is gitignored; `.env.example` contains no real values |
@@ -640,12 +766,12 @@ python -m pytest tests/ -v
 
 - **Face similarity ≠ identity.** Cosine similarity tells you two face crops scored above a threshold. It does not establish who a person is.
 - **Reverse-image search depends on provider indexing.** If an image has never been indexed by Google, the search returns no results. This is a property of the search engine, not a bug.
-- **Social platforms may block automated image access.** CDNs commonly block hotlinking. The pipeline tries multiple URLs per candidate and reports failures.
+- **Social platforms may block automated image access.** CDNs commonly block hotlinking. The pipeline checks reachability, falls back to provider thumbnails, and reports failures transparently.
 - **False positives and false negatives exist.** No face recognition model is perfect. SFace's threshold was chosen by the model authors.
 - **Public testnets are not production infrastructure.** Sepolia may reorganise, be deprecated, or experience downtime.
 - **The 500 KB SerpAPI upload limit** means large images are re-encoded. The input fingerprint always refers to the original file; the search copy's digest is recorded separately.
-- **No web UI.** This is a CLI-only tool.
-- **Single-run, not a service.** Each invocation performs one search and one blockchain registration. There is no persistent daemon or API server.
+- **Single-use staged jobs.** In the web UI, each staged upload UUID can only be streamed once. Refreshing or double-clicking does not re-trigger gas-spending blockchain writes.
+- **Bounded concurrency on free tier.** Render's 512 MB container runs 1 job at a time (`MAX_CONCURRENT_JOBS=1`). Parallel requests receive HTTP 429 with retry guidance.
 
 ---
 
@@ -655,7 +781,6 @@ These are **not currently implemented**. They are realistic extensions of the cu
 
 - **Batch processing** — process multiple images in sequence with a summary report
 - **Multi-chain support** — deploy to Base, Polygon, or other EVM chains (the code already supports any EVM via chain ID detection)
-- **Web UI** — a Streamlit or Flask interface for non-CLI users
 - **Embedding storage option** — opt-in encrypted local storage for re-verification without re-encoding
 - **Automated integration tests** — using a local Anvil node and mocked search responses
 - **IPFS artifact pinning** — store the full verification artifact on IPFS alongside the chain hash
@@ -693,16 +818,17 @@ The existing README states MIT. No standalone `LICENSE` file is present in the r
 
 ### Project Intent
 
-A **CLI pipeline** that chains computer vision (face detection + recognition), live reverse-image-search APIs, deterministic hashing, and Ethereum smart contract interaction into a single auditable verification flow. Built as a hackathon submission (Hacker House Goa 2026, Task #3).
+A **CLI pipeline + interactive Web Application** that chains computer vision (face detection + recognition), live reverse-image-search APIs, deterministic hashing, and Ethereum smart contract interaction into a single auditable verification flow. Built as a hackathon submission (Hacker House Goa 2026, Task #3).
 
 ### Architecture at a Glance
 
 ```
-CLI (argparse) → pipeline.py orchestrator → {face/, search/, chain/, net/} subsystems → artifacts/ output
+CLI (__main__.py) / Web SPA (FastAPI server.py) → pipeline.py orchestrator → {face/, search/, chain/, net/} subsystems → artifacts/ output
 ```
 
-- **No web server, no database, no frontend.** Pure CLI tool.
-- **No global state.** `Config` is loaded once and passed to every function.
+- **Dual interfaces**: CLI command-line runner and FastAPI asynchronous web server (`app/server.py`) with SSE streaming to `app/web/` SPA.
+- **No database**: Verification records are cryptographically pinned to the blockchain; local outputs reside in `artifacts/`.
+- **No global state**: `Config` is loaded once and passed to functions; request-level web output is captured via `ui.use_sink(ContextVar)`.
 - **Data flows as frozen dataclasses** defined in `models.py`.
 
 ### Source of Truth
@@ -710,11 +836,14 @@ CLI (argparse) → pipeline.py orchestrator → {face/, search/, chain/, net/} s
 | Concern | Location |
 |---|---|
 | CLI argument parsing | `app/__main__.py` |
+| Web backend & SSE streaming | `app/server.py` |
+| Web frontend UI (SPA) | `app/web/` (`index.html`, `styles.css`, `app.js`) |
 | Pipeline orchestration (the 7 stages) | `app/pipeline.py` |
 | All dataclasses (15+) | `app/models.py` |
 | Configuration + validation | `app/config.py` |
 | Error types (15 classes) | `app/errors.py` |
 | Canonical hashing (SHA-256) | `app/hashing.py` |
+| Universal image decoding | `app/imaging.py` |
 | Face detection | `app/face/detector.py` — `FaceDetector` class |
 | Face encoding | `app/face/encoder.py` — `FaceEncoder` class |
 | Face comparison logic | `app/face/matcher.py` — `classify()`, `best_match()` |
@@ -724,12 +853,13 @@ CLI (argparse) → pipeline.py orchestrator → {face/, search/, chain/, net/} s
 | Google Vision implementation | `app/search/google_vision.py` |
 | Social platform detection | `app/search/social.py` — URL → platform mapping |
 | Candidate image download | `app/net/fetch.py` — SSRF-safe streaming fetch |
+| Candidate link reachability | `app/net/reachability.py` — Concurrent liveness check |
 | Web3 connection + network ID | `app/chain/client.py` |
-| Solidity compilation | `app/chain/compile.py` |
+| Solidity compilation & artifact | `app/chain/compile.py` + `contracts/build/` |
 | Contract deploy/register/read | `app/chain/registry.py` — `Registry` class |
 | Smart contract source | `contracts/VerificationRegistry.sol` |
 | Artifact I/O | `app/artifacts.py` |
-| Terminal output | `app/ui.py` |
+| Terminal & web event sinks | `app/ui.py` |
 
 ### Important Files (Ranked by Impact)
 

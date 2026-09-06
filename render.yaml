@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: faceid-verify
+    runtime: python
+    plan: free
+    buildCommand: ./render-build.sh
+    startCommand: uvicorn app.server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SEARCH_PROVIDER
+        value: serpapi
+      - key: SERPAPI_API_KEY
+        sync: false
+      - key: RPC_URL
+        value: https://ethereum-sepolia-rpc.publicnode.com
+      - key: PRIVATE_KEY
+        sync: false
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: FACE_MATCH_THRESHOLD
+        value: "0.363"
+      - key: FACE_REVIEW_THRESHOLD
+        value: "0.300"
+      - key: FACE_DETECT_CONFIDENCE
+        value: "0.850"
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"
