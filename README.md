@@ -15,6 +15,83 @@
 
 ---
 
+## ⚡ The 60-Second Evaluator Flow
+
+If you only have two minutes to evaluate this submission, run this exact sequence:
+
+```
+[1] ZERO-CONFIG TEST    python -m pytest tests/ -v
+         │              ↳ 152 offline tests across 11 modules — zero API keys or network required
+         ▼
+[2] RUN DEMO            python -m app demo --image samples/input.jpg
+         │              ↳ Watch YuNet detection → SFace encoding → live web search → multi-source verification
+         ▼
+[3] DUAL SURFACES       Terminal UI & Web UI (FastAPI SSE) consume identical structured audit events
+         │              ↳ Fail-safe: Terminal rendering crashes are isolated; pipeline never aborts
+         ▼
+[4] INSPECT PROOF       Open artifacts/latest_verification.json
+         │              ↳ Canonical JSON (float-quantized, sorted keys) + SHA-256 fingerprint
+         ▼
+[5] VERIFY ON-CHAIN     python -m app verify
+         │              ↳ Queries Sepolia contract → [PASS] Local hash matches on-chain commitment
+         ▼
+[6] TAMPER ATTACK       Mutate 1 value in the JSON artifact → python -m app verify
+                        ↳ [🚨 TAMPER DETECTED] Local recomputed SHA-256 ≠ on-chain commitment
+```
+
+### 🚨 10-Second Tamper Attack Demo
+
+This illustrates how the cryptographic integrity model works in practice:
+
+```bash
+# Step 1: Run read-back verification against Ethereum Sepolia
+python -m app verify
+# Output: [PASS] Local SHA-256 matches on-chain commitment 0x8a3f...
+
+# Step 2: Tamper with a single field in the local JSON artifact
+# (e.g. edit artifacts/latest_verification.json: change "similarity": 0.812345 to 0.999999)
+
+# Step 3: Run verification again
+python -m app verify
+# Output: [TAMPER DETECTED] Local SHA-256 (0x7c9b...) != On-chain commitment (0x8a3f...)
+```
+
+---
+
+## 💡 Core Technical Innovations
+
+### 1. Deterministic Multi-Source Provenance (Solving Web Nondeterminism)
+Web reverse-image searches are inherently nondeterministic: CDN rate limits, botwalls, dynamic ranking, and network jitter cause different candidates to win on different runs. A naive system that halts on the "first match" will produce different hashes for identical images.
+
+Our Stage 5 pipeline solves this by:
+1. **Evaluating up to 10 candidates in parallel** (never short-circuiting on the first match).
+2. **Re-verifying candidate faces** using YuNet detection and SFace cosine similarity.
+3. **Collecting all validated sources** in a sorted evidence set.
+4. **Deterministic 5-tier primary ranking key**:
+   $$\text{Similarity Bucket} \longrightarrow \text{Link Usability} \longrightarrow \text{Image Origin} \longrightarrow \text{Search Rank} \longrightarrow \text{Lexicographical URL}$$
+
+> **Result:** Identical input portraits always yield the exact same canonical primary record and identical hash, regardless of network jitter.
+
+### 2. Immutable Cryptographic Anchor (Zero Biometrics On-Chain)
+We do **not** store faces, embeddings, or personal information on-chain.
+* The 128-D SFace biometric vector exists **in memory only** and is never serialized or logged.
+* The pipeline canonicalizes evidence into strict JSON (`sort_keys=True`, `separators=(",", ":")`, floats quantized to 6 decimal places).
+* The 32-byte SHA-256 digest (`bytes32 recordHash`) is anchored to Ethereum Sepolia.
+
+> **The Architectural Boundary:** The blockchain does not claim to prove that an internet claim is objectively true. It proves that the canonical verification record has not been altered, backdated, or fabricated since the timestamp of confirmation.
+
+### 3. Synchronized Dual-Surface Architecture (Fail-Safe)
+The verification pipeline (`pipeline.run()`) emits typed, structured audit events to a thread-isolated `EventSink`:
+```
+                               ┌──→ Web UI: Browser SSE Stream (FastAPI server.py)
+pipeline.run() ── EventSink ──┤
+                               └──→ CLI: Terminal Audit Renderer (terminal.py)
+```
+* **Shared state:** Both the terminal dashboard and the web frontend consume the exact same event stream.
+* **Failure isolation:** The `TerminalAuditRenderer` wraps all display logic in a fail-safe boundary (`try/except`). A terminal rendering error or window resizing crash **cannot take down the verification pipeline**.
+
+---
+
 ## Evaluator Quick Start
 
 ```bash
