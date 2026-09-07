@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 import time
@@ -41,6 +42,9 @@ from .chain.registry import load_registry
 from .config import Config
 from .errors import PipelineError
 from .hashing import record_hash
+from .terminal import TerminalAuditRenderer
+
+logger = logging.getLogger("app.server")
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -112,14 +116,21 @@ def _jsonable(value: Any) -> Any:
 class EventSink(ui.ConsoleSink):
     """Captures pipeline progress as structured events on a thread-safe bridge.
 
-    Installed inside the worker thread via ``ui.use_sink``. Never prints. Every
-    method forwards to the event loop with ``call_soon_threadsafe`` because the
-    asyncio queue must only be touched from the loop thread.
+    Installed inside the worker thread via ``ui.use_sink``. Single emission
+    point for both the web SSE stream and the dedicated TerminalAuditRenderer.
     """
 
-    def __init__(self, loop: asyncio.AbstractEventLoop, queue: "asyncio.Queue") -> None:
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        queue: "asyncio.Queue",
+        job_id: str | None = None,
+        renderer: TerminalAuditRenderer | None = None,
+    ) -> None:
         self._loop = loop
         self._queue = queue
+        self._job_id = job_id
+        self._renderer = renderer
         self._step = 0
 
     def _now(self) -> str:
@@ -143,13 +154,38 @@ class EventSink(ui.ConsoleSink):
         return "SYSTEM"
 
     def _emit(self, event: dict[str, Any]) -> None:
+        """Single emission point for verification audit events.
+
+        Forwards the exact event payload to the terminal renderer (if enabled)
+        and to the SSE queue. Rendering failures are strictly isolated.
+        """
         if "time" not in event:
             event["time"] = self._now()
+        if self._job_id and "job_id" not in event:
+            event["job_id"] = self._job_id
+
+        # 1. Forward exact event to TerminalAuditRenderer when enabled
+        if self._renderer is not None:
+            try:
+                self._renderer.render(event)
+            except Exception as exc:
+                logger.warning("Terminal rendering error isolated: %s", exc)
+
+        # 2. Queue exact same event payload for SSE
         try:
             self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
         except RuntimeError:
             # Loop is shutting down; nothing to stream to.
             pass
+
+    def emit_hello(self, job_id: str, filename: str) -> None:
+        self._emit({"type": "hello", "job_id": job_id, "filename": filename})
+
+    def emit_result(self, result: dict[str, Any]) -> None:
+        self._emit({"type": "result", "result": result})
+
+    def emit_error(self, kind: str, message: str, hint: str | None = None) -> None:
+        self._emit({"type": "error", "kind": kind, "message": message, "hint": hint})
 
     def step(self, index: int, total: int, title: str) -> None:
         self._step = index
@@ -272,22 +308,19 @@ async def create_job(image: UploadFile) -> dict[str, Any]:
 
 def _run_worker(loop: asyncio.AbstractEventLoop, queue: "asyncio.Queue", job: Job) -> None:
     """Blocking pipeline run on a worker thread; emits events onto the queue."""
-    sink = EventSink(loop, queue)
+    config = Config.load()
+    terminal_audit = getattr(config, "terminal_audit", True)
+    renderer = TerminalAuditRenderer(job_id=job.id, filename=job.filename) if terminal_audit else None
+    sink = EventSink(loop, queue, job_id=job.id, renderer=renderer)
+    sink.emit_hello(job.id, job.filename)
     try:
         with ui.use_sink(sink):
-            config = Config.load()
             result = pipeline.run(str(job.path), config)
-        loop.call_soon_threadsafe(queue.put_nowait, {"type": "result", "result": result})
+        sink.emit_result(result)
     except PipelineError as exc:
-        loop.call_soon_threadsafe(
-            queue.put_nowait,
-            {"type": "error", "kind": exc.kind, "message": exc.message, "hint": exc.hint},
-        )
+        sink.emit_error(exc.kind, exc.message, exc.hint)
     except Exception as exc:  # noqa: BLE001 - surface anything else as a clean error event
-        loop.call_soon_threadsafe(
-            queue.put_nowait,
-            {"type": "error", "kind": "InternalError", "message": str(exc), "hint": None},
-        )
+        sink.emit_error("InternalError", str(exc), None)
     finally:
         loop.call_soon_threadsafe(queue.put_nowait, _SENTINEL)
         loop.call_soon_threadsafe(_release_slot)
@@ -338,7 +371,6 @@ async def stream_job(job_id: str, request: Request):
 
     async def _events():
         try:
-            yield _sse({"type": "hello", "job_id": job.id, "filename": job.filename})
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_S)

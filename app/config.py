@@ -47,6 +47,13 @@ def _get_float(name: str, default: float) -> float:
         ) from None
 
 
+def _get_bool(name: str, default: bool = True) -> bool:
+    raw = _get(name)
+    if not raw:
+        return default
+    return raw.lower() in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Config:
     # search
@@ -61,6 +68,8 @@ class Config:
     match_threshold: float
     review_threshold: float
     detect_confidence: float
+    # server terminal audit log
+    terminal_audit: bool = True
 
     # -- loading ------------------------------------------------------------
 
@@ -86,6 +95,7 @@ class Config:
             match_threshold=_get_float("FACE_MATCH_THRESHOLD", 0.363),
             review_threshold=_get_float("FACE_REVIEW_THRESHOLD", 0.300),
             detect_confidence=_get_float("FACE_DETECT_CONFIDENCE", 0.850),
+            terminal_audit=_get_bool("SERVER_TERMINAL_AUDIT", True),
         )
         cfg.validate_thresholds()
         return cfg
